@@ -38,9 +38,6 @@ body {
     overflow-x: hidden;
 }
 
-/* ==========================================
-   Layout & Wrapper
-   ========================================== */
 #app-wrapper {
     display: flex;
     width: 100%;
@@ -66,9 +63,6 @@ body {
     background-color: var(--body-bg);
 }
 
-/* ==========================================
-   Sidebar Styling
-   ========================================== */
 .sidebar-brand {
     padding: 1.5rem 1.25rem;
     display: flex;
@@ -196,9 +190,6 @@ body {
     border: 2px solid #dbeafe;
 }
 
-/* ==========================================
-   Content & Cards
-   ========================================== */
 .main-content {
     padding: 1.75rem;
     flex: 1;
@@ -299,9 +290,6 @@ body {
     padding: 1.35rem;
 }
 
-/* ==========================================
-   Modern Tables
-   ========================================== */
 .table-custom {
     margin-bottom: 0;
     font-size: 0.885rem;
@@ -330,9 +318,6 @@ body {
     background-color: #f8fafc;
 }
 
-/* ==========================================
-   Unit Status Grid Cards
-   ========================================== */
 .unit-card {
     border: 1px solid var(--border-color);
     border-radius: var(--radius-md);
@@ -352,9 +337,6 @@ body {
 .unit-card.status-maintenance { border-top: 4px solid #d97706; }
 .unit-card.status-reserved { border-top: 4px solid #0284c7; }
 
-/* ==========================================
-   Printable Invoice / Receipt Styling
-   ========================================== */
 .receipt-wrapper {
     max-width: 800px;
     margin: 0 auto;
@@ -386,9 +368,6 @@ body {
     }
 }
 
-/* ==========================================
-   Buttons & Pills
-   ========================================== */
 .btn-primary {
     background-color: var(--primary-color);
     border-color: var(--primary-color);

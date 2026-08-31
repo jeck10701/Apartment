@@ -1,45 +1,24 @@
 <?php
-/**
- * Global Utility & Helper Functions
- */
-
-/**
- * Format currency to Philippine Peso (e.g. ₱ 8,500.00)
- */
 function formatPeso($amount) {
     return '₱ ' . number_format((float)($amount ?? 0), 2, '.', ',');
 }
 
-/**
- * Format Date to readable string (e.g. Aug 26, 2026)
- */
 function formatDate($date, $format = 'M d, Y') {
     if (!$date || $date === '0000-00-00' || $date === '0000-00-00 00:00:00') {
         return '—';
     }
     return date($format, strtotime($date));
 }
-
-/**
- * Sanitize user input string
- */
 function sanitize($input) {
     if (is_array($input)) {
         return array_map('sanitize', $input);
     }
     return htmlspecialchars(trim((string)$input), ENT_QUOTES, 'UTF-8');
 }
-
-/**
- * Check if a user session is active
- */
 function isLoggedIn() {
     return isset($_SESSION['user_id']) && !empty($_SESSION['user_id']);
 }
 
-/**
- * Retrieve current logged-in user array
- */
 function currentUser() {
     if (!isLoggedIn()) {
         return null;
@@ -55,18 +34,12 @@ function currentUser() {
     ];
 }
 
-/**
- * Check if the user has any of the given roles
- */
 function hasRole($roles) {
     if (!isLoggedIn()) return false;
     if (is_string($roles)) $roles = [$roles];
     return in_array($_SESSION['user_role'] ?? '', $roles);
 }
 
-/**
- * Enforce role requirement or redirect
- */
 function requireRole($roles) {
     if (!isLoggedIn()) {
         header("Location: " . BASE_URL . "login.php");
@@ -78,9 +51,6 @@ function requireRole($roles) {
     }
 }
 
-/**
- * Render stylish, consistent UI status badges
- */
 function statusBadge($status, $category = 'general') {
     $status = strtolower(trim((string)$status));
     $classes = 'badge px-2 py-1 rounded-pill ';
@@ -159,9 +129,6 @@ function statusBadge($status, $category = 'general') {
     }
 }
 
-/**
- * Flash notification helper
- */
 function setFlash($type, $message) {
     $_SESSION['flash'] = [
         'type'    => $type, // 'success', 'danger', 'warning', 'info'
@@ -169,9 +136,6 @@ function setFlash($type, $message) {
     ];
 }
 
-/**
- * Retrieve and clear flash notification
- */
 function getFlash() {
     if (isset($_SESSION['flash'])) {
         $flash = $_SESSION['flash'];
@@ -181,9 +145,6 @@ function getFlash() {
     return null;
 }
 
-/**
- * Render flash alert banner if one exists
- */
 function renderFlash() {
     $flash = getFlash();
     if ($flash) {
@@ -200,9 +161,6 @@ function renderFlash() {
     }
 }
 
-/**
- * Log action into audit_logs table
- */
 function logActivity($action, $details = '') {
     try {
         $pdo = getDBConnection();
@@ -211,13 +169,10 @@ function logActivity($action, $details = '') {
         $ip = $_SERVER['REMOTE_ADDR'] ?? '127.0.0.1';
         $stmt->execute([$userId, $action, $details, $ip]);
     } catch (Exception $e) {
-        // Silently continue if log table is unavailable
+
     }
 }
 
-/**
- * Fetch a system setting value by key
- */
 function getSetting($key, $default = '') {
     try {
         $pdo = getDBConnection();
@@ -230,9 +185,6 @@ function getSetting($key, $default = '') {
     }
 }
 
-/**
- * Redirect helper
- */
 function redirect($url) {
     header("Location: " . $url);
     exit;

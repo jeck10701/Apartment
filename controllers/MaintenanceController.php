@@ -1,16 +1,11 @@
 <?php
-/**
- * MaintenanceController - Handles Maintenance Tickets, Work Orders, and Repair Status
- */
 require_once dirname(__DIR__) . '/config/config.php';
 
 $pdo = getDBConnection();
 $action = $_GET['action'] ?? ($_POST['action'] ?? '');
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    // -------------------------------------------------------------
-    // CREATE MAINTENANCE TICKET
-    // -------------------------------------------------------------
+
     if ($action === 'create') {
         requireRole(['tenant', 'admin', 'super_admin']);
 
@@ -22,7 +17,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $tenantId    = intval($_POST['tenant_id'] ?? 0);
         $reqDate     = date('Y-m-d');
 
-        // If submitted from tenant portal, fetch their unit and tenant ID automatically
         if ($_SESSION['user_role'] === 'tenant') {
             $tStmt = $pdo->prepare("SELECT id, unit_id FROM tenants WHERE user_id = ? AND status = 'active' LIMIT 1");
             $tStmt->execute([$_SESSION['user_id']]);
@@ -53,9 +47,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         redirect($redirectUrl);
     }
 
-    // -------------------------------------------------------------
-    // UPDATE STATUS & WORK ORDER (ADMIN)
-    // -------------------------------------------------------------
     if ($action === 'update_status') {
         requireRole(['admin', 'super_admin']);
 

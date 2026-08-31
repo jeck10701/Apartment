@@ -1,7 +1,4 @@
 <?php
-/**
- * TenantController - Manages Tenant Onboarding, Leases, and Check-outs
- */
 require_once dirname(__DIR__) . '/config/config.php';
 requireRole(['admin', 'super_admin']);
 
@@ -9,9 +6,7 @@ $pdo = getDBConnection();
 $action = $_GET['action'] ?? ($_POST['action'] ?? '');
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    // -------------------------------------------------------------
-    // REGISTER NEW TENANT
-    // -------------------------------------------------------------
+
     if ($action === 'add') {
         $unitId       = intval($_POST['unit_id'] ?? 0);
         $firstName    = trim($_POST['first_name'] ?? '');
@@ -39,14 +34,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $pdo->beginTransaction();
 
             $userId = null;
-            // Optionally create Portal User Account for Tenant
             if ($createAccount) {
                 $username = strtolower(preg_replace('/[^a-zA-Z0-9]/', '', $firstName) . '.' . preg_replace('/[^a-zA-Z0-9]/', '', $lastName));
                 $userEmail = !empty($email) ? $email : $username . '@tenant.local';
                 $defaultPass = 'tenant123';
                 $hashedPass = password_hash($defaultPass, PASSWORD_DEFAULT);
 
-                // Check username uniqueness
                 $checkUser = $pdo->prepare("SELECT id FROM users WHERE username = ? OR email = ?");
                 $checkUser->execute([$username, $userEmail]);
                 if ($existing = $checkUser->fetch()) {
@@ -58,11 +51,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
             }
 
-            // Insert Tenant Record
             $stmt = $pdo->prepare("INSERT INTO tenants (user_id, unit_id, first_name, last_name, email, phone, emergency_contact_name, emergency_contact_phone, id_type, id_number, lease_start, lease_end, rent_due_day, deposit_paid, advance_paid, status, notes) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?)");
             $stmt->execute([$userId, $unitId, $firstName, $lastName, $email, $phone, $emergencyName, $emergencyPhone, $idType, $idNumber, $leaseStart, $leaseEnd, $rentDueDay, $depositPaid, $advancePaid, $notes]);
 
-            // Update assigned Unit status to Occupied
             $updateUnit = $pdo->prepare("UPDATE units SET status = 'occupied' WHERE id = ?");
             $updateUnit->execute([$unitId]);
 
@@ -78,9 +69,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         redirect(BASE_URL . 'views/admin/tenants.php');
     }
 
-    // -------------------------------------------------------------
-    // EDIT TENANT
-    // -------------------------------------------------------------
     if ($action === 'edit') {
         $tenantId     = intval($_POST['tenant_id'] ?? 0);
         $unitId       = ($_POST['unit_id'] ?? '') !== '' ? intval($_POST['unit_id']) : null;
@@ -107,7 +95,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         try {
             $pdo->beginTransaction();
 
-            // Keep unit occupancy in sync when an Admin assigns or removes a unit.
             $oldStmt = $pdo->prepare("SELECT unit_id FROM tenants WHERE id = ? LIMIT 1");
             $oldStmt->execute([$tenantId]);
             $oldTenant = $oldStmt->fetch();
@@ -148,9 +135,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         redirect(BASE_URL . 'views/admin/tenants.php');
     }
 
-    // -------------------------------------------------------------
-    // MOVE OUT / CHECKOUT TENANT
-    // -------------------------------------------------------------
     if ($action === 'move_out') {
         $tenantId = intval($_POST['tenant_id'] ?? 0);
 
@@ -162,7 +146,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $t = $getTenant->fetch();
 
             if ($t) {
-                // Set tenant status to moved_out
+
                 $stmt = $pdo->prepare("UPDATE tenants SET status = 'moved_out' WHERE id = ?");
                 $stmt->execute([$tenantId]);
 

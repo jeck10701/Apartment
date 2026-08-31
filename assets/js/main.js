@@ -1,8 +1,3 @@
-/**
- * ResiPro Apartment Management System - Main JavaScript
- * Handles dynamic UI interactions, real-time calculations, and modal logic
- */
-
 document.addEventListener('DOMContentLoaded', function () {
     // 1. Auto-dismiss flash alerts after 5 seconds
     const flashAlerts = document.querySelectorAll('.alert-dismissible');
@@ -38,7 +33,6 @@ document.addEventListener('DOMContentLoaded', function () {
         }
     });
 
-    // 3. Sub-meter Utility Calculation (Live Math)
     const prevWaterInput = document.getElementById('prev_water_reading');
     const currWaterInput = document.getElementById('curr_water_reading');
     const waterRateInput = document.getElementById('water_rate');
@@ -101,15 +95,11 @@ document.addEventListener('DOMContentLoaded', function () {
         }
     });
 
-    // Run initial calculation once if elements are present
     if (currWaterInput || currElecInput) {
         calculateUtilities();
     }
 });
 
-/**
- * Confirm action with SweetAlert2 or browser fallback
- */
 function confirmAction(message, onConfirm) {
     if (window.Swal) {
         Swal.fire({

@@ -1,18 +1,10 @@
 <?php
-/**
- * UtilityController - Handles Water & Electric Sub-meter Readings & Computations
- */
 require_once dirname(__DIR__) . '/config/config.php';
 requireRole(['admin', 'super_admin']);
 
 $pdo = getDBConnection();
 $action = $_GET['action'] ?? ($_POST['action'] ?? '');
 
-// -------------------------------------------------------------
-// GET SELECTED UNIT RATES
-// Always reads the latest rates directly from the units table.
-// This prevents the Sub-meter page from showing 0.00 because of stale/missing HTML data attributes.
-// -------------------------------------------------------------
 if ($action === 'get_unit_rates' && $_SERVER['REQUEST_METHOD'] === 'GET') {
     header('Content-Type: application/json; charset=utf-8');
 
@@ -46,11 +38,6 @@ if ($action === 'get_unit_rates' && $_SERVER['REQUEST_METHOD'] === 'GET') {
     exit;
 }
 
-// -------------------------------------------------------------
-// GET PREVIOUS METER READING FOR AUTO-FILL
-// Uses the latest reading strictly before the selected billing month.
-// If none exists, the previous reading starts at 0.00.
-// -------------------------------------------------------------
 if ($action === 'get_previous_reading' && $_SERVER['REQUEST_METHOD'] === 'GET') {
     header('Content-Type: application/json; charset=utf-8');
 
@@ -86,9 +73,7 @@ if ($action === 'get_previous_reading' && $_SERVER['REQUEST_METHOD'] === 'GET') 
 }
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    // -------------------------------------------------------------
-    // RECORD NEW SUB-METER READING
-    // -------------------------------------------------------------
+
     if ($action === 'record') {
         $unitId       = intval($_POST['unit_id'] ?? 0);
         $tenantId     = intval($_POST['tenant_id'] ?? 0);
@@ -106,7 +91,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             redirect(BASE_URL . 'views/admin/utilities.php');
         }
 
-        // Confirm that the selected tenant is actually assigned to the selected unit.
         $assignmentStmt = $pdo->prepare("SELECT id FROM tenants WHERE id = ? AND unit_id = ? AND status = 'active' LIMIT 1");
         $assignmentStmt->execute([$tenantId, $unitId]);
         if (!$assignmentStmt->fetch()) {
@@ -114,7 +98,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             redirect(BASE_URL . 'views/admin/utilities.php');
         }
 
-        // Rates are controlled by the selected Unit. Never trust the browser's posted rate.
         $rateStmt = $pdo->prepare("SELECT water_rate_per_unit, electric_rate_per_kwh FROM units WHERE id = ? LIMIT 1");
         $rateStmt->execute([$unitId]);
         $unitRates = $rateStmt->fetch();
@@ -141,20 +124,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         try {
             $pdo->beginTransaction();
 
-            // Insert Utility Reading
             $stmt = $pdo->prepare("INSERT INTO utility_readings (unit_id, tenant_id, billing_month, prev_water_reading, curr_water_reading, water_consumption, water_rate, water_amount, prev_electric_reading, curr_electric_reading, electric_consumption, electric_rate, electric_amount, reading_date) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
             $stmt->execute([$unitId, $tenantId, $billingMonth, $prevWater, $currWater, $waterConsumption, $waterRate, $waterAmount, $prevElec, $currElec, $elecConsumption, $elecRate, $elecAmount, $readingDate]);
             $readingId = $pdo->lastInsertId();
 
-            // Optionally auto-generate Monthly Rent + Utility Invoice
             if ($autoGenerateInvoice) {
-                // Fetch unit rent
+
                 $getUnit = $pdo->prepare("SELECT monthly_rent, unit_number FROM units WHERE id = ?");
                 $getUnit->execute([$unitId]);
                 $unit = $getUnit->fetch();
                 $rentAmount = floatval($unit['monthly_rent'] ?? 0);
 
-                // Fetch tenant due day
                 $getTenant = $pdo->prepare("SELECT rent_due_day FROM tenants WHERE id = ?");
                 $getTenant->execute([$tenantId]);
                 $t = $getTenant->fetch();

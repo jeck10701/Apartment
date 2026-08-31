@@ -1,20 +1,8 @@
 <?php
-/**
- * AuthController - Handles user authentication, registration, session security, profile updates, and OTP Password Reset / Super Admin Approval
- */
 require_once dirname(__DIR__) . '/config/config.php';
 
 use PHPMailer\PHPMailer\PHPMailer;
 
-/**
- * Send email through Gmail SMTP using PHPMailer.
- *
- * Requires:
- *   /PHPMailer/src/Exception.php
- *   /PHPMailer/src/PHPMailer.php
- *   /PHPMailer/src/SMTP.php
- *   /config/mail.php
- */
 function sendResiProEmail($to, $toName, $subject, $htmlBody, $altBody = '') {
     $projectRoot = dirname(__DIR__);
 
@@ -86,7 +74,6 @@ function sendResiProEmail($to, $toName, $subject, $htmlBody, $altBody = '') {
 $pdo = getDBConnection();
 $action = $_GET['action'] ?? ($_POST['action'] ?? '');
 
-// Helper to ensure password_resets table exists and supports tokens
 function ensurePasswordResetsTable($pdo) {
     try {
         $pdo->exec("CREATE TABLE IF NOT EXISTS `password_resets` (
@@ -104,9 +91,6 @@ function ensurePasswordResetsTable($pdo) {
     } catch (Exception $e) {}
 }
 
-// -------------------------------------------------------------
-// APPROVE LANDLORD REGISTRATION (FROM SUPER ADMIN GMAIL 1-CLICK LINK)
-// -------------------------------------------------------------
 if ($action === 'approve_landlord') {
     $token = trim($_GET['token'] ?? '');
     $email = trim($_GET['email'] ?? '');
@@ -119,13 +103,11 @@ if ($action === 'approve_landlord') {
     try {
         ensurePasswordResetsTable($pdo);
 
-        // Match exact token or truncated 10-char token (for legacy compatibility)
         $shortToken = substr($token, 0, 10);
         $checkToken = $pdo->prepare("SELECT id FROM password_resets WHERE email = ? AND (code = ? OR code = ?) ORDER BY id DESC LIMIT 1");
         $checkToken->execute([$email, $token, $shortToken]);
         $validToken = $checkToken->fetch();
 
-        // Fetch landlord user
         $uStmt = $pdo->prepare("SELECT * FROM users WHERE email = ? AND role = 'admin' LIMIT 1");
         $uStmt->execute([$email]);
         $user = $uStmt->fetch();
@@ -137,11 +119,9 @@ if ($action === 'approve_landlord') {
 
         $pdo->beginTransaction();
 
-        // Activate user
         $actStmt = $pdo->prepare("UPDATE users SET status = 'active' WHERE id = ?");
         $actStmt->execute([$user['id']]);
 
-        // Ensure property exists for this landlord
         $pCheck = $pdo->prepare("SELECT id FROM properties WHERE owner_id = ? LIMIT 1");
         $pCheck->execute([$user['id']]);
         if (!$pCheck->fetch()) {
@@ -149,7 +129,6 @@ if ($action === 'approve_landlord') {
             $propStmt->execute([$user['id'], $user['name'] . "'s Apartment", 'Main Property Address']);
         }
 
-        // Delete used token if found
         if ($validToken) {
             $delToken = $pdo->prepare("DELETE FROM password_resets WHERE id = ?");
             $delToken->execute([$validToken['id']]);
@@ -159,7 +138,6 @@ if ($action === 'approve_landlord') {
 
         logActivity('LANDLORD_APPROVED', "Super Admin approved landlord registration for {$user['name']} ({$user['email']}).");
 
-        // Send confirmation email to the approved Landlord
         try {
             $subject = "Account Approved! Welcome to ResiPro";
             $msg = "
@@ -179,7 +157,6 @@ if ($action === 'approve_landlord') {
             sendResiProEmail($user['email'], $user['name'], $subject, $msg, "Your ResiPro landlord account has been approved by the Super Admin! You can now log in at " . BASE_URL . "login.php");
         } catch (\Throwable $mailErr) {}
 
-        // Render clean standalone approval confirmation page
         ?>
         <!DOCTYPE html>
         <html lang="en">
@@ -223,9 +200,6 @@ if ($action === 'approve_landlord') {
     }
 }
 
-// -------------------------------------------------------------
-// REJECT LANDLORD REGISTRATION (FROM SUPER ADMIN GMAIL 1-CLICK LINK)
-// -------------------------------------------------------------
 if ($action === 'reject_landlord') {
     $token = trim($_GET['token'] ?? '');
     $email = trim($_GET['email'] ?? '');
@@ -243,11 +217,10 @@ if ($action === 'reject_landlord') {
         $validToken = $checkToken->fetch();
 
         if ($validToken) {
-            // Delete inactive user
+
             $delUser = $pdo->prepare("DELETE FROM users WHERE email = ? AND role = 'admin' AND status = 'inactive'");
             $delUser->execute([$email]);
 
-            // Delete token
             $delToken = $pdo->prepare("DELETE FROM password_resets WHERE id = ?");
             $delToken->execute([$validToken['id']]);
 
@@ -266,9 +239,6 @@ if ($action === 'reject_landlord') {
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
-    // -------------------------------------------------------------
-    // 1. LOGIN ACTION
-    // -------------------------------------------------------------
     if ($action === 'login') {
         $usernameOrEmail = trim($_POST['username'] ?? '');
         $password = trim($_POST['password'] ?? '');
@@ -288,7 +258,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 redirect(BASE_URL . 'login.php');
             }
 
-            // Check if user is pending Super Admin approval or inactive
             if ($user['status'] === 'inactive' && $user['role'] === 'admin') {
                 setFlash('warning', 'Your Landlord account is currently pending Super Administrator approval via Gmail. You will be able to sign in once approved.');
                 redirect(BASE_URL . 'login.php');
@@ -299,11 +268,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             $isValidPassword = false;
 
-            // Strictly verify against stored database password hash (No hardcoded backdoor fallbacks)
             if (password_verify($password, $user['password'])) {
                 $isValidPassword = true;
             } elseif ($password === $user['password']) {
-                // One-time automatic migration from plaintext legacy seed password to bcrypt
+
                 $isValidPassword = true;
                 $newHash = password_hash($password, PASSWORD_DEFAULT);
                 $updateStmt = $pdo->prepare("UPDATE users SET password = ? WHERE id = ?");
@@ -311,7 +279,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
 
             if ($isValidPassword) {
-                // Initialize Session
+
                 $_SESSION['user_id']       = $user['id'];
                 $_SESSION['user_name']     = $user['name'];
                 $_SESSION['user_username'] = $user['username'];
@@ -322,7 +290,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
                 logActivity('LOGIN', 'User ' . $user['name'] . ' (' . $user['role'] . ') logged in.');
 
-                // Route to respective role portal
+
                 if ($user['role'] === 'super_admin') {
                     redirect(BASE_URL . 'views/super_admin/dashboard.php');
                 } elseif ($user['role'] === 'admin') {
@@ -340,9 +308,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
     }
 
-    // -------------------------------------------------------------
-    // 2. REQUEST SUPER ADMIN 6-DIGIT AUTHORIZATION CODE (FOR LANDLORD REGISTRATION)
-    // -------------------------------------------------------------
     if ($action === 'request_admin_otp') {
         header('Content-Type: application/json');
         $applicantName  = trim($_POST['applicant_name'] ?? 'Landlord Applicant');
@@ -356,30 +321,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         try {
             ensurePasswordResetsTable($pdo);
 
-            // Fetch Super Admin email
             $saStmt = $pdo->query("SELECT email, name FROM users WHERE role = 'super_admin' LIMIT 1");
             $superAdmin = $saStmt->fetch();
             $superAdminEmail = $superAdmin['email'] ?? 'superadmin@resipro.ph';
             $superAdminName  = $superAdmin['name'] ?? 'Super Administrator';
 
-            // Generate 6-digit verification code
             $adminOtpCode = sprintf('%06d', mt_rand(100000, 999999));
             $expiresAt = date('Y-m-d H:i:s', strtotime('+30 minutes'));
 
-            // Clean previous admin approval codes and store new one
             $del = $pdo->prepare("DELETE FROM password_resets WHERE email = ?");
             $del->execute([$superAdminEmail]);
 
             $ins = $pdo->prepare("INSERT INTO password_resets (email, code, expires_at) VALUES (?, ?, ?)");
             $ins->execute([$superAdminEmail, $adminOtpCode, $expiresAt]);
 
-            // Mask Super Admin email for display
             $parts = explode('@', $superAdminEmail);
             $namePart = $parts[0];
             $domainPart = $parts[1] ?? '';
             $maskedSuperAdmin = (strlen($namePart) > 2) ? substr($namePart, 0, 1) . str_repeat('*', strlen($namePart) - 2) . substr($namePart, -1) . '@' . $domainPart : $superAdminEmail;
 
-            // Send Email to Super Admin
             $subject = "[APPROVAL CODE: $adminOtpCode] Landlord Registration Request - ResiPro";
             $message = "
             <html>
@@ -422,9 +382,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
     }
 
-    // -------------------------------------------------------------
-    // 3. USER REGISTRATION ACTION (WITH SUPER ADMIN 6-DIGIT CODE FOR LANDLORD)
-    // -------------------------------------------------------------
     if ($action === 'register') {
         $name      = trim($_POST['name'] ?? '');
         $username  = trim($_POST['username'] ?? '');
@@ -440,7 +397,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             redirect(BASE_URL . 'register.php');
         }
 
-        // Validate EVERYTHING before creating any database record.
         if ($name === '' || $username === '' || $email === '' || $phone === '' || $password === '') {
             setFlash('danger', 'Please complete all required fields before creating your account.');
             redirect(BASE_URL . 'register.php');
@@ -482,9 +438,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
 
         try {
-            // ---------------------------------------------------------
-            // DUPLICATE CHECKS — still BEFORE INSERT / BEFORE OTP USE
-            // ---------------------------------------------------------
+
             $dup = $pdo->prepare("SELECT id, name, username, email, phone, role FROM users WHERE LOWER(username) = LOWER(?) OR LOWER(email) = LOWER(?) OR LOWER(name) = LOWER(?) OR phone = ? LIMIT 1");
             $dup->execute([$username, $email, $name, $phone]);
             $existing = $dup->fetch(PDO::FETCH_ASSOC);
@@ -504,9 +458,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             ensurePasswordResetsTable($pdo);
 
-            // ---------------------------------------------------------
-            // LANDLORD / ADMIN APPROVAL — only after all basic checks pass
-            // ---------------------------------------------------------
             $validReset = null;
             if ($role === 'admin') {
                 if (!preg_match('/^\d{6}$/', $adminCode)) {
@@ -527,9 +478,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
             }
 
-            // ---------------------------------------------------------
-            // TRANSACTION — if ANY insert fails, NOTHING is saved.
-            // ---------------------------------------------------------
             $pdo->beginTransaction();
 
             $hashedPassword = password_hash($password, PASSWORD_DEFAULT);
@@ -542,18 +490,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $newUserId = (int)$pdo->lastInsertId();
 
             if ($role === 'admin') {
-                // Create the landlord's default property only after the user insert succeeds.
+
                 $propStmt = $pdo->prepare("INSERT INTO properties (owner_id, name, address) VALUES (?, ?, ?)");
                 $propStmt->execute([$newUserId, $name . "'s Apartment", 'Main Property Address']);
 
-                // Consume the approval code only after the complete registration succeeds.
                 if ($validReset) {
                     $delCode = $pdo->prepare("DELETE FROM password_resets WHERE id = ?");
                     $delCode->execute([$validReset['id']]);
                 }
             } else {
-                // Every new Tenant account gets a Tenant Masterlist record automatically.
-                // unit_id is intentionally NULL until the Admin assigns a unit.
+
                 $nameParts = preg_split('/\s+/', trim($name));
                 $firstName = $nameParts[0] ?? 'Tenant';
                 $lastName = count($nameParts) > 1 ? implode(' ', array_slice($nameParts, 1)) : '';
@@ -573,7 +519,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 ]);
             }
 
-            // Final transaction check: user + related record are both committed together.
+
             $pdo->commit();
 
             logActivity('USER_REGISTERED', "New account registered: $name ($username, $role)" . ($role === 'admin' ? " [Authorized by Super Admin Code]" : ""));
@@ -584,7 +530,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $pdo->rollBack();
             }
 
-            // Database-level UNIQUE constraints are the final safety net.
             if ((string)$e->getCode() === '23000') {
                 $msg = strtolower($e->getMessage());
                 if (strpos($msg, 'username') !== false) {
@@ -607,9 +552,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
     }
 
-    // -------------------------------------------------------------
-    // 4. FORGOT PASSWORD - SEND 6-DIGIT OTP
-    // -------------------------------------------------------------
     if ($action === 'send_otp') {
         $email = trim($_POST['email'] ?? '');
 
@@ -621,7 +563,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         try {
             ensurePasswordResetsTable($pdo);
 
-            // Check if user exists
             $stmt = $pdo->prepare("SELECT id, name FROM users WHERE email = ? AND status = 'active' LIMIT 1");
             $stmt->execute([$email]);
             $user = $stmt->fetch();
@@ -631,18 +572,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 redirect(BASE_URL . 'forgot_password.php');
             }
 
-            // Generate 6-digit numeric OTP code
             $otpCode = sprintf('%06d', mt_rand(100000, 999999));
             $expiresAt = date('Y-m-d H:i:s', strtotime('+15 minutes'));
 
-            // Clean previous codes for this email and save new OTP
             $del = $pdo->prepare("DELETE FROM password_resets WHERE email = ?");
             $del->execute([$email]);
 
             $ins = $pdo->prepare("INSERT INTO password_resets (email, code, expires_at) VALUES (?, ?, ?)");
             $ins->execute([$email, $otpCode, $expiresAt]);
 
-            // Compose and send email notification
             $subject = "Your Verification Code: $otpCode - ResiPro Apartment Management";
             $message = "
             <html>
@@ -673,12 +611,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             setFlash('success', "A 6-digit verification code has been sent to <strong>" . htmlspecialchars($email) . "</strong>. Please check your inbox and Spam folder.");
             redirect(BASE_URL . 'verify_otp.php?email=' . urlencode($email));
         } catch (\Throwable $e) {
-            // If SMTP fails, remove the code that was just generated so it cannot be used accidentally.
+
             try {
                 $cleanup = $pdo->prepare("DELETE FROM password_resets WHERE email = ?");
                 $cleanup->execute([$email]);
             } catch (\Throwable $cleanupError) {
-                // Keep the original SMTP error as the useful message.
+  
             }
 
             setFlash('danger', 'Could not send the verification email. Please check the Gmail SMTP settings. Details: ' . htmlspecialchars($e->getMessage()));
@@ -686,9 +624,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
     }
 
-    // -------------------------------------------------------------
-    // 5. VERIFY 6-DIGIT OTP CODE
-    // -------------------------------------------------------------
     if ($action === 'verify_otp') {
         $email = trim($_POST['email'] ?? ($_SESSION['pending_reset_email'] ?? ''));
         $otp   = trim($_POST['otp_code'] ?? '');
@@ -706,7 +641,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $resetRecord = $stmt->fetch();
 
             if ($resetRecord) {
-                // Delete used OTP
+
                 $del = $pdo->prepare("DELETE FROM password_resets WHERE email = ?");
                 $del->execute([$email]);
 
@@ -725,9 +660,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
     }
 
-    // -------------------------------------------------------------
-    // 6. SET NEW PASSWORD AFTER OTP VERIFICATION
-    // -------------------------------------------------------------
     if ($action === 'reset_password') {
         $email   = $_SESSION['verified_reset_email'] ?? '';
         $newPass = trim($_POST['new_password'] ?? '');
@@ -770,9 +702,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
     }
 
-    // -------------------------------------------------------------
-    // 7. SEND OTP FOR PROFILE PASSWORD CHANGE (AUTHENTICATION)
-    // -------------------------------------------------------------
     if ($action === 'send_profile_otp') {
         header('Content-Type: application/json');
         if (!isLoggedIn()) {
@@ -796,24 +725,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $email = $user['email'];
             $name = $user['name'];
 
-            // Generate 6-digit OTP code
+
             $otpCode = sprintf('%06d', mt_rand(100000, 999999));
             $expiresAt = date('Y-m-d H:i:s', strtotime('+15 minutes'));
 
-            // Clean previous codes for this email and save new OTP
             $del = $pdo->prepare("DELETE FROM password_resets WHERE email = ?");
             $del->execute([$email]);
 
             $ins = $pdo->prepare("INSERT INTO password_resets (email, code, expires_at) VALUES (?, ?, ?)");
             $ins->execute([$email, $otpCode, $expiresAt]);
 
-            // Mask email for privacy display
             $parts = explode('@', $email);
             $namePart = $parts[0];
             $domainPart = $parts[1] ?? '';
             $maskedEmail = (strlen($namePart) > 2) ? substr($namePart, 0, 2) . str_repeat('*', strlen($namePart) - 2) . '@' . $domainPart : $email;
 
-            // Compose email
             $subject = "Security Verification Code: $otpCode - Password Change Authentication";
             $message = "
             <html>
@@ -854,9 +780,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
     }
 
-    // -------------------------------------------------------------
-    // 8. PROFILE AVATAR UPLOAD
-    // -------------------------------------------------------------
     if ($action === 'upload_avatar') {
         requireRole(['super_admin', 'admin', 'tenant']);
         $userId = intval($_SESSION['user_id'] ?? 0);
@@ -920,7 +843,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $update->execute([$relativePath, $userId]);
             $_SESSION['user_avatar'] = $relativePath;
 
-            // Remove the old local avatar after the new one is safely saved.
             if (!empty($existing['avatar']) && strpos($existing['avatar'], 'assets/uploads/avatars/') === 0) {
                 $oldFile = ROOT_PATH . str_replace(['/', '\\'], DIRECTORY_SEPARATOR, $existing['avatar']);
                 if (is_file($oldFile) && $oldFile !== $destination) {
@@ -937,9 +859,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         redirect(BASE_URL . 'views/shared/profile.php');
     }
 
-    // -------------------------------------------------------------
-    // 9. DELETE OWN ACCOUNT (ADMIN / TENANT)
-    // -------------------------------------------------------------
     if ($action === 'delete_my_account') {
         requireRole(['admin', 'tenant']);
         $userId = intval($_SESSION['user_id'] ?? 0);
@@ -995,9 +914,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
     }
 
-    // -------------------------------------------------------------
-    // 8. PROFILE UPDATE ACTION (WITH OTP & PASSWORD AUTHENTICATION)
-    // -------------------------------------------------------------
     if ($action === 'update_profile') {
         requireRole(['super_admin', 'admin', 'tenant']);
         $userId = $_SESSION['user_id'];
@@ -1017,7 +933,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         try {
             ensurePasswordResetsTable($pdo);
 
-            // Fetch current user data
             $userCheck = $pdo->prepare("SELECT * FROM users WHERE id = ?");
             $userCheck->execute([$userId]);
             $currentUserData = $userCheck->fetch();
@@ -1027,7 +942,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 redirect(BASE_URL . 'login.php');
             }
 
-            // Check if email collision exists for another user
             if ($email !== $currentUserData['email']) {
                 $emailCheck = $pdo->prepare("SELECT id FROM users WHERE email = ? AND id != ?");
                 $emailCheck->execute([$email, $userId]);
@@ -1037,14 +951,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
             }
 
-            // Update personal details
             $stmt = $pdo->prepare("UPDATE users SET name = ?, email = ?, phone = ? WHERE id = ?");
             $stmt->execute([$name, $email, $phone, $userId]);
             $_SESSION['user_name'] = $name;
             $_SESSION['user_email'] = $email;
             $_SESSION['user_phone'] = $phone;
 
-            // Handle password change if requested
             $isChangingPassword = !empty($newPass) || !empty($confirmPass) || !empty($currentPass) || !empty($otpCode);
 
             if ($isChangingPassword) {
@@ -1064,7 +976,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     redirect(BASE_URL . 'views/shared/profile.php');
                 }
 
-                // Verify the 6-digit OTP for this user's email
                 $checkOtp = $pdo->prepare("SELECT id FROM password_resets WHERE email = ? AND code = ? AND expires_at >= NOW() ORDER BY id DESC LIMIT 1");
                 $checkOtp->execute([$currentUserData['email'], $otpCode]);
                 $validOtp = $checkOtp->fetch();
@@ -1089,11 +1000,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     redirect(BASE_URL . 'views/shared/profile.php');
                 }
 
-                // Delete used OTP
                 $delOtp = $pdo->prepare("DELETE FROM password_resets WHERE id = ?");
                 $delOtp->execute([$validOtp['id']]);
 
-                // Update password with secure bcrypt hash
                 $newHash = password_hash($newPass, PASSWORD_DEFAULT);
                 $passUpdate = $pdo->prepare("UPDATE users SET password = ? WHERE id = ?");
                 $passUpdate->execute([$newHash, $userId]);
@@ -1113,5 +1022,4 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 }
 
-// Default fallback
 redirect(BASE_URL . 'login.php');

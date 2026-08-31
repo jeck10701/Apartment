@@ -1,7 +1,4 @@
 <?php
-/**
- * AdminController - Handles Super Administrator Actions (Owners, Properties, Settings)
- */
 require_once dirname(__DIR__) . '/config/config.php';
 requireRole(['super_admin']);
 
@@ -9,9 +6,6 @@ $pdo = getDBConnection();
 $action = $_GET['action'] ?? ($_POST['action'] ?? '');
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    // -------------------------------------------------------------
-    // ADD NEW PROPERTY OWNER
-    // -------------------------------------------------------------
     if ($action === 'add_owner') {
         $name     = trim($_POST['name'] ?? '');
         $username = trim($_POST['username'] ?? '');
@@ -40,7 +34,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $userStmt->execute([$name, $username, $email, $hashedPass, $phone]);
             $ownerId = $pdo->lastInsertId();
 
-            // Create initial property for this owner
             $propStmt = $pdo->prepare("INSERT INTO properties (owner_id, name, address) VALUES (?, ?, ?)");
             $propStmt->execute([$ownerId, $propName, $propAddr]);
 
@@ -55,10 +48,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         redirect(BASE_URL . 'views/super_admin/owners.php');
     }
 
-    // -------------------------------------------------------------
-    // DELETE USER ACCOUNT (SUPER ADMIN ONLY)
-    // Supports Property Owners/Admins and Tenant accounts.
-    // -------------------------------------------------------------
     if ($action === 'delete_account') {
         $accountId = intval($_POST['account_id'] ?? 0);
 
@@ -67,8 +56,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             redirect(BASE_URL . 'views/super_admin/owners.php');
         }
 
-        // Never allow the currently logged-in Super Admin or another
-        // Super Admin account to be deleted from this screen.
         try {
             $stmt = $pdo->prepare("SELECT id, name, username, email, role FROM users WHERE id = ? LIMIT 1");
             $stmt->execute([$accountId]);
@@ -88,9 +75,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             $pdo->beginTransaction();
 
-            // Deleting an admin cascades to properties/units according to the
-            // database foreign keys. Tenant user records are detached from
-            // the tenant profile via ON DELETE SET NULL.
             $del = $pdo->prepare("DELETE FROM users WHERE id = ? AND role IN ('admin', 'tenant')");
             $del->execute([$accountId]);
 
@@ -116,9 +100,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         redirect(BASE_URL . 'views/super_admin/owners.php');
     }
 
-    // -------------------------------------------------------------
-    // UPDATE SYSTEM SETTINGS
-    // -------------------------------------------------------------
     if ($action === 'update_settings') {
         $settings = [
             'system_name'          => trim($_POST['system_name'] ?? 'ResiPro Apartment Management'),

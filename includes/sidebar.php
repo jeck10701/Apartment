@@ -1,8 +1,5 @@
 <?php
-/**
- * Context-Aware Application Sidebar
- * Renders appropriate navigation links based on user role (Super Admin, Admin/Owner, Tenant)
- */
+
 $currentUser = currentUser();
 $role = $currentUser['role'] ?? 'tenant';
 $currentScript = basename($_SERVER['PHP_SELF']);
@@ -15,7 +12,7 @@ function isNavActive($page, $dir = '') {
 }
 ?>
 <aside id="sidebar">
-    <!-- Brand Header -->
+
     <div class="sidebar-brand">
         <div class="brand-icon">
             <i class="fas fa-building"></i>
@@ -32,10 +29,9 @@ function isNavActive($page, $dir = '') {
         </div>
     </div>
 
-    <!-- Navigation Menu -->
     <nav class="sidebar-nav">
         <?php if ($role === 'super_admin'): ?>
-            <!-- Super Admin Links -->
+
             <div class="nav-section-title">Overview</div>
             <a href="<?php echo BASE_URL; ?>views/super_admin/dashboard.php" class="sidebar-link <?php echo isNavActive('dashboard.php', 'super_admin'); ?>">
                 <i class="fas fa-chart-pie"></i>
@@ -57,7 +53,6 @@ function isNavActive($page, $dir = '') {
             </a>
 
         <?php elseif ($role === 'admin'): ?>
-            <!-- Property Owner / Landlord Links -->
             <div class="nav-section-title">Overview</div>
             <a href="<?php echo BASE_URL; ?>views/admin/dashboard.php" class="sidebar-link <?php echo isNavActive('dashboard.php', 'admin'); ?>">
                 <i class="fas fa-th-large"></i>
@@ -99,7 +94,7 @@ function isNavActive($page, $dir = '') {
             </a>
 
         <?php else: ?>
-            <!-- Tenant Portal Links -->
+
             <div class="nav-section-title">My Account</div>
             <a href="<?php echo BASE_URL; ?>views/tenant/dashboard.php" class="sidebar-link <?php echo isNavActive('dashboard.php', 'tenant'); ?>">
                 <i class="fas fa-home"></i>
@@ -126,7 +121,6 @@ function isNavActive($page, $dir = '') {
         </a>
     </nav>
 
-    <!-- Sidebar User Footer -->
     <div class="sidebar-footer">
         <div class="d-flex align-items-center gap-2">
             <?php if (!empty($currentUser['avatar'])): ?>

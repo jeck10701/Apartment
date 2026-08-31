@@ -1,7 +1,4 @@
 <?php
-/**
- * UnitController - Handles CRUD operations and status management for Units/Rooms
- */
 require_once dirname(__DIR__) . '/config/config.php';
 requireRole(['admin', 'super_admin']);
 
@@ -9,9 +6,7 @@ $pdo = getDBConnection();
 $action = $_GET['action'] ?? ($_POST['action'] ?? '');
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    // -------------------------------------------------------------
-    // ADD UNIT
-    // -------------------------------------------------------------
+
     if ($action === 'add') {
         $propertyId = intval($_POST['property_id'] ?? 1);
         $unitNumber = trim($_POST['unit_number'] ?? '');
@@ -32,7 +27,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
 
         try {
-            // Check for duplicate unit number under same property
+
             $check = $pdo->prepare("SELECT id FROM units WHERE property_id = ? AND unit_number = ?");
             $check->execute([$propertyId, $unitNumber]);
             if ($check->fetch()) {
@@ -52,9 +47,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         redirect(BASE_URL . 'views/admin/units.php');
     }
 
-    // -------------------------------------------------------------
-    // EDIT UNIT
-    // -------------------------------------------------------------
     if ($action === 'edit') {
         $unitId      = intval($_POST['unit_id'] ?? 0);
         $unitNumber  = trim($_POST['unit_number'] ?? '');
@@ -87,14 +79,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         redirect(BASE_URL . 'views/admin/units.php');
     }
 
-    // -------------------------------------------------------------
-    // DELETE UNIT
-    // -------------------------------------------------------------
     if ($action === 'delete') {
         $unitId = intval($_POST['unit_id'] ?? 0);
 
         try {
-            // Check if there are active tenants
+
             $check = $pdo->prepare("SELECT id FROM tenants WHERE unit_id = ? AND status = 'active'");
             $check->execute([$unitId]);
             if ($check->fetch()) {

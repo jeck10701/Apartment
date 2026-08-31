@@ -1,8 +1,3 @@
-/**
- * ResiPro Apartment Management System - Dashboard Visualizations
- * High-performance Chart.js integration for revenue trends and occupancy metrics
- */
-
 document.addEventListener('DOMContentLoaded', function () {
     // 1. Monthly Revenue & Collection Trend Chart
     const revenueCanvas = document.getElementById('revenueChart');

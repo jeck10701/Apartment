@@ -1,16 +1,11 @@
 <?php
-/**
- * PaymentController - Handles Payment Recording, GCash/Bank Proof Uploads, and Verification
- */
 require_once dirname(__DIR__) . '/config/config.php';
 
 $pdo = getDBConnection();
 $action = $_GET['action'] ?? ($_POST['action'] ?? '');
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    // -------------------------------------------------------------
-    // ADMIN RECORDS A PAYMENT
-    // -------------------------------------------------------------
+
     if ($action === 'record') {
         requireRole(['admin', 'super_admin']);
 
@@ -41,11 +36,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             $paymentRef = 'PAY-' . date('Ymd') . '-' . rand(1000, 9999);
 
-            // Insert Payment
             $payStmt = $pdo->prepare("INSERT INTO payments (invoice_id, tenant_id, payment_reference, amount, payment_method, transaction_ref_no, payment_date, status, notes, received_by) VALUES (?, ?, ?, ?, ?, ?, ?, 'confirmed', ?, ?)");
             $payStmt->execute([$invoiceId, $invoice['tenant_id'], $paymentRef, $amount, $method, $refNo, $paymentDate, $notes, $receivedBy]);
 
-            // Update Invoice Paid Amount & Balance
             $newPaid = $invoice['paid_amount'] + $amount;
             $newBalance = max(0, $invoice['total_amount'] - $newPaid);
             $newStatus = ($newBalance <= 0) ? 'paid' : 'partially_paid';
@@ -65,9 +58,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         redirect(BASE_URL . 'views/admin/payments.php');
     }
 
-    // -------------------------------------------------------------
-    // TENANT SUBMITS PROOF OF PAYMENT
-    // -------------------------------------------------------------
     if ($action === 'submit_proof') {
         requireRole(['tenant', 'admin', 'super_admin']);
 
@@ -78,7 +68,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $paymentDate = $_POST['payment_date'] ?? date('Y-m-d');
         $notes       = trim($_POST['notes'] ?? '');
 
-        // Fetch tenant ID for this user
         $userId = $_SESSION['user_id'];
         $tStmt = $pdo->prepare("SELECT id FROM tenants WHERE user_id = ? OR id = ? LIMIT 1");
         $tStmt->execute([$userId, intval($_POST['tenant_id'] ?? 0)]);
@@ -89,7 +78,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             redirect(BASE_URL . 'views/tenant/billing.php');
         }
 
-        // Handle Proof of payment image upload
         $proofFileName = null;
         if (!empty($_FILES['proof_file']['name'])) {
             $allowedExts = ['jpg', 'jpeg', 'png', 'webp', 'pdf'];
@@ -118,9 +106,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         redirect(BASE_URL . 'views/tenant/billing.php');
     }
 
-    // -------------------------------------------------------------
-    // ADMIN VERIFIES / APPROVES PENDING PAYMENT
-    // -------------------------------------------------------------
     if ($action === 'verify') {
         requireRole(['admin', 'super_admin']);
 

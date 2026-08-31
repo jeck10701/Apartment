@@ -1,17 +1,11 @@
 <?php
-/**
- * BillingController - Manages Invoices, Penalties, and SOA Generation
- */
+
 require_once dirname(__DIR__) . '/config/config.php';
 requireRole(['admin', 'super_admin']);
 
 $pdo = getDBConnection();
 $action = $_GET['action'] ?? ($_POST['action'] ?? '');
 
-// -------------------------------------------------------------
-// GET UTILITY TOTALS FOR INVOICE GENERATION
-// Pulls the saved sub-meter amounts for the selected tenant/month.
-// -------------------------------------------------------------
 if ($action === 'get_utility_for_invoice' && $_SERVER['REQUEST_METHOD'] === 'GET') {
     header('Content-Type: application/json; charset=utf-8');
 
@@ -50,9 +44,7 @@ if ($action === 'get_utility_for_invoice' && $_SERVER['REQUEST_METHOD'] === 'GET
 }
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    // -------------------------------------------------------------
-    // GENERATE NEW INVOICE
-    // -------------------------------------------------------------
+
     if ($action === 'create') {
         $tenantId    = intval($_POST['tenant_id'] ?? 0);
         $periodStart = $_POST['billing_period_start'] ?? date('Y-m-01');
@@ -71,7 +63,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
 
         try {
-            // Fetch tenant's unit ID
+  
             $tStmt = $pdo->prepare("SELECT unit_id FROM tenants WHERE id = ?");
             $tStmt->execute([$tenantId]);
             $unitId = $tStmt->fetchColumn();
@@ -81,9 +73,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 redirect(BASE_URL . 'views/admin/billing.php');
             }
 
-            // If a sub-meter reading was already saved for this tenant and billing month,
-            // use its computed water/electric charges automatically. This keeps the invoice
-            // synchronized with Sub-meter Readings instead of relying on manually typed amounts.
             $billingMonth = date('Y-m', strtotime($periodStart));
             $utilityReadingId = null;
             $utilityStmt = $pdo->prepare("SELECT id, water_amount, electric_amount FROM utility_readings
@@ -113,9 +102,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         redirect(BASE_URL . 'views/admin/billing.php');
     }
 
-    // -------------------------------------------------------------
-    // APPLY LATE PENALTY FEE
-    // -------------------------------------------------------------
     if ($action === 'apply_penalty') {
         $invoiceId = intval($_POST['invoice_id'] ?? 0);
         $penaltyAmt = floatval($_POST['penalty_amount'] ?? 250.00);
@@ -143,9 +129,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         redirect(BASE_URL . 'views/admin/billing.php');
     }
 
-    // -------------------------------------------------------------
-    // DELETE INVOICE
-    // -------------------------------------------------------------
     if ($action === 'delete') {
         $invoiceId = intval($_POST['invoice_id'] ?? 0);
 
