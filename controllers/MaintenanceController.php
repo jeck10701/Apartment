@@ -18,12 +18,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $reqDate     = date('Y-m-d');
 
         if ($_SESSION['user_role'] === 'tenant') {
-            $tStmt = $pdo->prepare("SELECT id, unit_id FROM tenants WHERE user_id = ? AND status = 'active' LIMIT 1");
-            $tStmt->execute([$_SESSION['user_id']]);
+            $tStmt = $pdo->prepare("SELECT id, unit_id FROM tenants WHERE user_id = ? AND unit_id = ? AND status = 'active' LIMIT 1");
+            $tStmt->execute([$_SESSION['user_id'], $unitId]);
             $t = $tStmt->fetch();
             if ($t) {
                 $tenantId = $t['id'];
                 $unitId   = $t['unit_id'];
+            } else {
+                $tFallback = $pdo->prepare("SELECT id, unit_id FROM tenants WHERE user_id = ? AND status = 'active' LIMIT 1");
+                $tFallback->execute([$_SESSION['user_id']]);
+                $tf = $tFallback->fetch();
+                if ($tf) {
+                    $tenantId = $tf['id'];
+                    $unitId   = $tf['unit_id'];
+                }
             }
         }
 

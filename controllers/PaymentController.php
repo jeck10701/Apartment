@@ -69,9 +69,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $notes       = trim($_POST['notes'] ?? '');
 
         $userId = $_SESSION['user_id'];
-        $tStmt = $pdo->prepare("SELECT id FROM tenants WHERE user_id = ? OR id = ? LIMIT 1");
-        $tStmt->execute([$userId, intval($_POST['tenant_id'] ?? 0)]);
-        $tenantId = $tStmt->fetchColumn();
+        // Lookup tenant_id directly from the chosen invoice for accurate multi-unit mapping
+        $invStmt = $pdo->prepare("SELECT tenant_id FROM invoices WHERE id = ?");
+        $invStmt->execute([$invoiceId]);
+        $tenantId = $invStmt->fetchColumn();
+
+        if (!$tenantId) {
+            $tStmt = $pdo->prepare("SELECT id FROM tenants WHERE user_id = ? OR id = ? LIMIT 1");
+            $tStmt->execute([$userId, intval($_POST['tenant_id'] ?? 0)]);
+            $tenantId = $tStmt->fetchColumn();
+        }
 
         if (!$tenantId || $invoiceId <= 0 || $amount <= 0) {
             setFlash('danger', 'Invalid payment submission parameters.');

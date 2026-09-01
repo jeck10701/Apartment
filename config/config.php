@@ -5,7 +5,7 @@ if (session_status() === PHP_SESSION_NONE) {
 
 date_default_timezone_set('Asia/Manila');
 
-define('APP_NAME', 'ResiPro Apartment Management');
+define('APP_NAME', 'JLD Apartment Management');
 define('APP_VERSION', '1.0.0');
 define('CURRENCY_SYMBOL', '₱');
 

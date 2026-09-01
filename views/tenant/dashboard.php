@@ -8,52 +8,77 @@ $pdo = getDBConnection();
 $pageTitle = 'Tenant Portal Dashboard';
 $userId = $_SESSION['user_id'];
 
-// 1. Fetch Tenant and Unit Details
+// 1. Fetch All Active Units Rented by this Tenant
 $tStmt = $pdo->prepare("SELECT t.*, u.unit_number, u.unit_type, u.monthly_rent, u.water_rate_per_unit, u.electric_rate_per_kwh, p.name as property_name, p.address as property_address
     FROM tenants t
     JOIN units u ON t.unit_id = u.id
     JOIN properties p ON u.property_id = p.id
-    WHERE t.user_id = ? AND t.status = 'active' LIMIT 1");
+    WHERE t.user_id = ? AND t.status = 'active'
+    ORDER BY u.unit_number ASC");
 $tStmt->execute([$userId]);
-$tenant = $tStmt->fetch();
+$tenantUnits = $tStmt->fetchAll();
 
 // If tenant profile is not linked directly, fetch first active tenant for demo view
-if (!$tenant) {
-    $tenant = $pdo->query("SELECT t.*, u.unit_number, u.unit_type, u.monthly_rent, u.water_rate_per_unit, u.electric_rate_per_kwh, p.name as property_name, p.address as property_address
+if (empty($tenantUnits)) {
+    $demoStmt = $pdo->query("SELECT t.*, u.unit_number, u.unit_type, u.monthly_rent, u.water_rate_per_unit, u.electric_rate_per_kwh, p.name as property_name, p.address as property_address
         FROM tenants t
         JOIN units u ON t.unit_id = u.id
         JOIN properties p ON u.property_id = p.id
-        WHERE t.status = 'active' LIMIT 1")->fetch();
+        WHERE t.status = 'active' LIMIT 1");
+    $demoRow = $demoStmt->fetch();
+    if ($demoRow) {
+        $tenantUnits = [$demoRow];
+    }
 }
 
-$tenantId = $tenant['id'] ?? 0;
+$tenant = !empty($tenantUnits) ? $tenantUnits[0] : [];
+$tenantIds = !empty($tenantUnits) ? array_filter(array_column($tenantUnits, 'id')) : [];
+$unitCount = count($tenantUnits);
+$unitNumbers = !empty($tenantUnits) ? array_column($tenantUnits, 'unit_number') : [];
+$unitDisplay = !empty($unitNumbers) ? implode(', ', $unitNumbers) : 'None';
+$totalMonthlyRent = !empty($tenantUnits) ? array_sum(array_column($tenantUnits, 'monthly_rent')) : 0;
 
-// 2. Fetch Latest Unpaid/Overdue Invoice
+// 2. Fetch Latest Unpaid/Overdue Invoice across all tenant units
 $latestInv = null;
 $totalBalance = 0;
-if ($tenantId) {
-    $invStmt = $pdo->prepare("SELECT * FROM invoices WHERE tenant_id = ? AND status IN ('unpaid', 'partially_paid', 'overdue') ORDER BY due_date ASC LIMIT 1");
-    $invStmt->execute([$tenantId]);
+if (!empty($tenantIds)) {
+    $inPlaceholders = implode(',', array_fill(0, count($tenantIds), '?'));
+    $invStmt = $pdo->prepare("SELECT inv.*, u.unit_number 
+        FROM invoices inv 
+        JOIN units u ON inv.unit_id = u.id 
+        WHERE inv.tenant_id IN ($inPlaceholders) AND inv.status IN ('unpaid', 'partially_paid', 'overdue') 
+        ORDER BY inv.due_date ASC LIMIT 1");
+    $invStmt->execute($tenantIds);
     $latestInv = $invStmt->fetch();
 
-    $balStmt = $pdo->prepare("SELECT SUM(balance) FROM invoices WHERE tenant_id = ? AND status IN ('unpaid', 'partially_paid', 'overdue')");
-    $balStmt->execute([$tenantId]);
+    $balStmt = $pdo->prepare("SELECT SUM(balance) FROM invoices WHERE tenant_id IN ($inPlaceholders) AND status IN ('unpaid', 'partially_paid', 'overdue')");
+    $balStmt->execute($tenantIds);
     $totalBalance = floatval($balStmt->fetchColumn() ?? 0);
 }
 
 // 3. Fetch Recent Payments
 $recentPayments = [];
-if ($tenantId) {
-    $payStmt = $pdo->prepare("SELECT p.*, inv.invoice_number FROM payments p JOIN invoices inv ON p.invoice_id = inv.id WHERE p.tenant_id = ? ORDER BY p.payment_date DESC LIMIT 3");
-    $payStmt->execute([$tenantId]);
+if (!empty($tenantIds)) {
+    $inPlaceholders = implode(',', array_fill(0, count($tenantIds), '?'));
+    $payStmt = $pdo->prepare("SELECT p.*, inv.invoice_number 
+        FROM payments p 
+        JOIN invoices inv ON p.invoice_id = inv.id 
+        WHERE p.tenant_id IN ($inPlaceholders) 
+        ORDER BY p.payment_date DESC LIMIT 3");
+    $payStmt->execute($tenantIds);
     $recentPayments = $payStmt->fetchAll();
 }
 
 // 4. Fetch Active Maintenance Requests
 $activeTickets = [];
-if ($tenantId) {
-    $tickStmt = $pdo->prepare("SELECT * FROM maintenance_requests WHERE tenant_id = ? ORDER BY created_at DESC LIMIT 3");
-    $tickStmt->execute([$tenantId]);
+if (!empty($tenantIds)) {
+    $inPlaceholders = implode(',', array_fill(0, count($tenantIds), '?'));
+    $tickStmt = $pdo->prepare("SELECT mr.*, u.unit_number 
+        FROM maintenance_requests mr 
+        JOIN units u ON mr.unit_id = u.id 
+        WHERE mr.tenant_id IN ($inPlaceholders) 
+        ORDER BY mr.created_at DESC LIMIT 3");
+    $tickStmt->execute($tenantIds);
     $activeTickets = $tickStmt->fetchAll();
 }
 
@@ -68,7 +93,7 @@ include_once dirname(dirname(__DIR__)) . '/includes/header.php';
 <div class="d-md-flex align-items-center justify-content-between mb-4">
     <div>
         <h1 class="page-title">Welcome, <?php echo htmlspecialchars($tenant['first_name'] ?? 'Tenant'); ?>!</h1>
-        <p class="page-subtitle"><?php echo htmlspecialchars($tenant['property_name'] ?? 'Apartment Residence'); ?> &bull; <strong><?php echo htmlspecialchars($tenant['unit_number'] ?? 'Unit'); ?></strong></p>
+        <p class="page-subtitle"><?php echo htmlspecialchars($tenant['property_name'] ?? 'Apartment Residence'); ?> &bull; <strong><?php echo htmlspecialchars($unitDisplay); ?></strong> <?php if ($unitCount > 1): ?><span class="badge bg-primary ms-1"><?php echo $unitCount; ?> Units Rented</span><?php endif; ?></p>
     </div>
     <div class="d-flex gap-2 mt-3 mt-md-0">
         <a href="<?php echo BASE_URL; ?>views/tenant/maintenance.php" class="btn btn-outline-secondary">
@@ -92,7 +117,7 @@ include_once dirname(dirname(__DIR__)) . '/includes/header.php';
                         <?php echo formatPeso($totalBalance); ?>
                     </div>
                     <?php if ($latestInv): ?>
-                        <small class="text-danger"><i class="fas fa-clock me-1"></i>Due by <?php echo formatDate($latestInv['due_date']); ?></small>
+                        <small class="text-danger"><i class="fas fa-clock me-1"></i>Due by <?php echo formatDate($latestInv['due_date']); ?> (<?php echo htmlspecialchars($latestInv['unit_number']); ?>)</small>
                     <?php else: ?>
                         <small class="text-success"><i class="fas fa-check-circle me-1"></i>All accounts are settled!</small>
                     <?php endif; ?>
@@ -109,9 +134,11 @@ include_once dirname(dirname(__DIR__)) . '/includes/header.php';
         <div class="stat-card">
             <div class="d-flex align-items-center justify-content-between">
                 <div>
-                    <span class="stat-label">Unit Assignment</span>
-                    <div class="stat-value text-primary"><?php echo htmlspecialchars($tenant['unit_number'] ?? '—'); ?></div>
-                    <small class="text-muted"><?php echo htmlspecialchars($tenant['unit_type'] ?? 'Studio'); ?> &bull; <?php echo formatPeso($tenant['monthly_rent'] ?? 0); ?>/mo</small>
+                    <span class="stat-label">Unit Assignment<?php echo $unitCount > 1 ? 's (' . $unitCount . ')' : ''; ?></span>
+                    <div class="stat-value text-primary" style="<?php echo $unitCount > 2 ? 'font-size: 1.15rem;' : ''; ?>">
+                        <?php echo htmlspecialchars($unitDisplay); ?>
+                    </div>
+                    <small class="text-muted">Total Rent: <?php echo formatPeso($totalMonthlyRent); ?>/mo</small>
                 </div>
                 <div class="stat-icon-wrapper stat-icon-blue">
                     <i class="fas fa-home"></i>
@@ -136,6 +163,32 @@ include_once dirname(dirname(__DIR__)) . '/includes/header.php';
         </div>
     </div>
 </div>
+
+<?php if ($unitCount > 1): ?>
+<!-- Multi-Unit Detail Cards -->
+<div class="custom-card mb-4">
+    <div class="custom-card-header bg-light">
+        <h5 class="custom-card-title"><i class="fas fa-th-large text-primary me-2"></i>My Assigned Units Breakdown</h5>
+    </div>
+    <div class="custom-card-body p-3">
+        <div class="row g-3">
+            <?php foreach ($tenantUnits as $tu): ?>
+                <div class="col-12 col-md-6 col-lg-4">
+                    <div class="p-3 border rounded-3 bg-white shadow-sm h-100">
+                        <div class="d-flex justify-content-between align-items-start mb-2">
+                            <h6 class="fw-bold text-primary mb-0"><i class="fas fa-door-open me-1"></i><?php echo htmlspecialchars($tu['unit_number']); ?></h6>
+                            <span class="badge bg-light text-dark border"><?php echo htmlspecialchars($tu['unit_type']); ?></span>
+                        </div>
+                        <div class="small text-muted mb-1">Monthly Rent: <strong><?php echo formatPeso($tu['monthly_rent']); ?></strong></div>
+                        <div class="small text-muted mb-1">Lease: <?php echo formatDate($tu['lease_start']); ?> &ndash; <?php echo formatDate($tu['lease_end']); ?></div>
+                        <div class="small text-muted">Rent Due: <strong>Every <?php echo $tu['rent_due_day']; ?>th</strong></div>
+                    </div>
+                </div>
+            <?php endforeach; ?>
+        </div>
+    </div>
+</div>
+<?php endif; ?>
 
 <div class="row g-4">
     <!-- Current Statement & Payment Instructions -->

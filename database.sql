@@ -191,7 +191,7 @@ CREATE TABLE `password_resets` (
 ) ENGINE=InnoDB;
 
 INSERT INTO `system_settings` (`setting_key`, `setting_value`) VALUES
-('system_name', 'ResiPro Apartment Management System'),
+('system_name', 'JLD Apartment Management System'),
 ('currency_symbol', '₱'),
 ('company_email', 'jeckdetera07@gmail.com'),
 ('company_phone', '+63 917 555 8921'),

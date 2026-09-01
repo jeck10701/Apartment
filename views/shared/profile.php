@@ -1,17 +1,64 @@
 <?php
 /**
- * Shared: User Profile Settings & Security
+ * Shared: User Profile Settings, Full Information View & Photo Crop Tool
  */
 require_once dirname(dirname(__DIR__)) . '/includes/auth_check.php';
 
 $pdo = getDBConnection();
-$pageTitle = 'Account Profile';
+$pageTitle = 'Account Profile & Settings';
 $userId = $_SESSION['user_id'];
 
-// Fetch latest user details from DB
+// 1. Fetch latest user details from DB
 $uStmt = $pdo->prepare("SELECT * FROM users WHERE id = ?");
 $uStmt->execute([$userId]);
 $user = $uStmt->fetch();
+
+if (!$user) {
+    setFlash('danger', 'User account not found.');
+    redirect(BASE_URL . 'login.php');
+}
+
+// 2. Fetch role-specific details
+$tenantUnits = [];
+$adminProperties = [];
+$superAdminStats = [];
+$totalTenantBalance = 0;
+
+if ($user['role'] === 'tenant') {
+    $tStmt = $pdo->prepare("SELECT t.*, u.unit_number, u.unit_type, u.monthly_rent, u.water_rate_per_unit, u.electric_rate_per_kwh, 
+            p.name as property_name, p.address as property_address
+        FROM tenants t
+        LEFT JOIN units u ON t.unit_id = u.id
+        LEFT JOIN properties p ON u.property_id = p.id
+        WHERE t.user_id = ?
+        ORDER BY (t.status = 'active') DESC, t.created_at DESC");
+    $tStmt->execute([$userId]);
+    $tenantUnits = $tStmt->fetchAll();
+
+    // Calculate outstanding balance across all units
+    $tenantIds = array_filter(array_column($tenantUnits, 'id'));
+    if (!empty($tenantIds)) {
+        $inPlaceholders = implode(',', array_fill(0, count($tenantIds), '?'));
+        $balStmt = $pdo->prepare("SELECT SUM(balance) FROM invoices WHERE tenant_id IN ($inPlaceholders) AND status IN ('unpaid', 'partially_paid', 'overdue')");
+        $balStmt->execute($tenantIds);
+        $totalTenantBalance = floatval($balStmt->fetchColumn() ?? 0);
+    }
+} elseif ($user['role'] === 'admin') {
+    $propStmt = $pdo->prepare("SELECT p.*, 
+            (SELECT COUNT(*) FROM units WHERE property_id = p.id) as total_units,
+            (SELECT COUNT(*) FROM units WHERE property_id = p.id AND status = 'occupied') as occupied_units,
+            (SELECT COUNT(*) FROM units WHERE property_id = p.id AND status = 'vacant') as vacant_units
+        FROM properties p
+        WHERE p.owner_id = ?
+        ORDER BY p.name ASC");
+    $propStmt->execute([$userId]);
+    $adminProperties = $propStmt->fetchAll();
+} elseif ($user['role'] === 'super_admin') {
+    $superAdminStats['total_landlords'] = $pdo->query("SELECT COUNT(*) FROM users WHERE role = 'admin'")->fetchColumn();
+    $superAdminStats['total_tenants'] = $pdo->query("SELECT COUNT(*) FROM users WHERE role = 'tenant'")->fetchColumn();
+    $superAdminStats['total_properties'] = $pdo->query("SELECT COUNT(*) FROM properties")->fetchColumn();
+    $superAdminStats['total_units'] = $pdo->query("SELECT COUNT(*) FROM units")->fetchColumn();
+}
 
 // Mask email for security display (e.g., je***7@gmail.com)
 $userEmail = $user['email'] ?? '';
@@ -23,185 +70,667 @@ $maskedEmail = (strlen($namePart) > 2) ? substr($namePart, 0, 2) . str_repeat('*
 include_once dirname(dirname(__DIR__)) . '/includes/header.php';
 ?>
 
+<!-- Cropper.js CSS -->
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.6.2/cropper.min.css">
+
+<style>
+.profile-avatar-container {
+    position: relative;
+    width: 120px;
+    height: 120px;
+    margin: 0 auto;
+    border-radius: 50%;
+    cursor: pointer;
+}
+.profile-avatar-img {
+    width: 120px;
+    height: 120px;
+    border-radius: 50%;
+    object-fit: cover;
+    border: 4px solid #fff;
+    box-shadow: 0 4px 14px rgba(0,0,0,0.12);
+    transition: transform 0.2s ease, filter 0.2s ease;
+}
+.profile-avatar-fallback {
+    width: 120px;
+    height: 120px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, var(--primary-color, #2563eb), #1d4ed8);
+    color: #fff;
+    font-size: 2.75rem;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: 4px solid #fff;
+    box-shadow: 0 4px 14px rgba(0,0,0,0.12);
+}
+.profile-avatar-overlay {
+    position: absolute;
+    bottom: 0;
+    right: 0;
+    width: 38px;
+    height: 38px;
+    background: var(--primary-color, #2563eb);
+    color: #fff;
+    border-radius: 50%;
+    border: 3px solid #fff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.95rem;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.18);
+    transition: transform 0.2s ease, background-color 0.2s ease;
+}
+.profile-avatar-container:hover .profile-avatar-img {
+    filter: brightness(0.92);
+}
+.profile-avatar-container:hover .profile-avatar-overlay {
+    transform: scale(1.1);
+    background: #1d4ed8;
+}
+.info-field-card {
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 12px;
+    padding: 14px 16px;
+    height: 100%;
+}
+.info-field-label {
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: #64748b;
+    margin-bottom: 4px;
+}
+.info-field-value {
+    font-size: 0.95rem;
+    font-weight: 600;
+    color: #1e293b;
+    word-break: break-word;
+}
+.nav-pills-custom .nav-link {
+    font-weight: 600;
+    font-size: 0.9rem;
+    color: #64748b;
+    border-radius: 10px;
+    padding: 10px 18px;
+    transition: all 0.2s ease;
+}
+.nav-pills-custom .nav-link.active {
+    background-color: var(--primary-color, #2563eb);
+    color: #fff;
+    box-shadow: 0 4px 12px rgba(37, 99, 235, 0.25);
+}
+.crop-preview-circle {
+    width: 110px;
+    height: 110px;
+    border-radius: 50%;
+    overflow: hidden;
+    border: 3px solid #3b82f6;
+    margin: 0 auto;
+    background: #f1f5f9;
+}
+</style>
+
 <div class="d-md-flex align-items-center justify-content-between mb-4">
     <div>
-        <h1 class="page-title">My Account Profile</h1>
-        <p class="page-subtitle">Update your personal contact information and manage your login password securely.</p>
+        <h1 class="page-title">My Account Profile & Settings</h1>
+        <p class="page-subtitle">View your complete account information, adjust & center your profile picture, or manage your login security.</p>
+    </div>
+    <div class="mt-3 mt-md-0 d-flex gap-2">
+        <button type="button" class="btn btn-primary shadow-sm" onclick="openAvatarCropModal()">
+            <i class="fas fa-crop-alt me-1"></i> Edit / Center Profile Picture
+        </button>
     </div>
 </div>
 
-<div class="row g-4">
-    <!-- User Overview Card -->
-    <div class="col-12 col-md-4">
-        <div class="custom-card text-center p-4">
-            <div class="mx-auto mb-3 position-relative" style="width: 88px; height: 88px;">
-                <?php if (!empty($user['avatar'])): ?>
-                    <img src="<?php echo BASE_URL . htmlspecialchars($user['avatar']); ?>" alt="Profile Picture" id="profileAvatarPreview" class="rounded-circle border shadow-sm" style="width:88px;height:88px;object-fit:cover;">
+<!-- Main Top Profile Banner -->
+<div class="custom-card mb-4 overflow-hidden border-0 shadow-sm" style="border-radius: 16px;">
+    <div class="p-4 bg-light border-bottom">
+        <div class="row align-items-center g-4">
+            <div class="col-12 col-md-auto text-center">
+                <div class="profile-avatar-container" onclick="openAvatarCropModal()" title="Click to Edit & Center Profile Picture">
+                    <?php if (!empty($user['avatar'])): ?>
+                        <img src="<?php echo BASE_URL . htmlspecialchars($user['avatar']); ?>" alt="Profile Picture" id="mainAvatarDisplay" class="profile-avatar-img">
+                    <?php else: ?>
+                        <div class="profile-avatar-fallback" id="mainAvatarFallback">
+                            <?php echo strtoupper(substr($user['name'], 0, 1)); ?>
+                        </div>
+                    <?php endif; ?>
+                    <div class="profile-avatar-overlay">
+                        <i class="fas fa-camera"></i>
+                    </div>
+                </div>
+                <button type="button" class="btn btn-link btn-sm text-decoration-none mt-1 p-0 fw-semibold" onclick="openAvatarCropModal()">
+                    <small><i class="fas fa-arrows-alt me-1"></i>Edit / Center</small>
+                </button>
+            </div>
+            <div class="col-12 col-md text-center text-md-start">
+                <div class="d-flex flex-wrap align-items-center justify-content-center justify-content-md-start gap-2 mb-1">
+                    <h3 class="fw-bold text-dark mb-0"><?php echo htmlspecialchars($user['name']); ?></h3>
+                    <?php if ($user['status'] === 'active'): ?>
+                        <span class="badge bg-success-subtle text-success border border-success-subtle px-2 py-1 rounded-pill small">
+                            <i class="fas fa-check-circle me-1"></i>Active Account
+                        </span>
+                    <?php endif; ?>
+                </div>
+
+                <div class="text-muted small mb-3">
+                    <span class="font-monospace fw-semibold text-primary">@<?php echo htmlspecialchars($user['username']); ?></span>
+                    &bull; 
+                    <span><i class="fas fa-envelope me-1"></i><?php echo htmlspecialchars($user['email']); ?></span>
+                    <?php if (!empty($user['phone'])): ?>
+                        &bull; <span><i class="fas fa-phone me-1"></i><?php echo htmlspecialchars($user['phone']); ?></span>
+                    <?php endif; ?>
+                </div>
+
+                <div class="d-flex flex-wrap align-items-center justify-content-center justify-content-md-start gap-2">
+                    <?php if ($user['role'] === 'super_admin'): ?>
+                        <span class="badge bg-danger text-white px-3 py-2 rounded-pill font-monospace" style="font-size: 0.8rem;">
+                            <i class="fas fa-shield-alt me-1"></i> SUPER ADMINISTRATOR
+                        </span>
+                    <?php elseif ($user['role'] === 'admin'): ?>
+                        <span class="badge bg-primary text-white px-3 py-2 rounded-pill font-monospace" style="font-size: 0.8rem;">
+                            <i class="fas fa-building me-1"></i> PROPERTY LANDLORD / ADMIN
+                        </span>
+                    <?php else: ?>
+                        <span class="badge bg-success text-white px-3 py-2 rounded-pill font-monospace" style="font-size: 0.8rem;">
+                            <i class="fas fa-home me-1"></i> TENANT RESIDENT
+                        </span>
+                    <?php endif; ?>
+                    <span class="badge bg-light text-secondary border px-3 py-2 rounded-pill small">
+                        <i class="fas fa-calendar-check me-1"></i> Member Since <?php echo formatDate($user['created_at'], 'F Y'); ?>
+                    </span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Navigation Tabs for Profile & Settings -->
+    <div class="px-4 pt-3 pb-0 bg-white">
+        <ul class="nav nav-pills nav-pills-custom gap-2 pb-3 border-bottom" id="profileTabs" role="tablist">
+            <li class="nav-item" role="presentation">
+                <button class="nav-link active" id="overview-tab" data-bs-toggle="pill" data-bs-target="#tab-overview" type="button" role="tab">
+                    <i class="fas fa-id-card me-1"></i> Full Account Information
+                </button>
+            </li>
+            <li class="nav-item" role="presentation">
+                <button class="nav-link" id="edit-tab" data-bs-toggle="pill" data-bs-target="#tab-edit" type="button" role="tab">
+                    <i class="fas fa-user-edit me-1"></i> Edit Profile Details
+                </button>
+            </li>
+            <li class="nav-item" role="presentation">
+                <button class="nav-link" id="security-tab" data-bs-toggle="pill" data-bs-target="#tab-security" type="button" role="tab">
+                    <i class="fas fa-lock me-1"></i> Password & Security
+                </button>
+            </li>
+            <?php if (in_array($user['role'], ['admin', 'tenant'], true)): ?>
+            <li class="nav-item ms-auto" role="presentation">
+                <button class="nav-link text-danger" id="danger-tab" data-bs-toggle="pill" data-bs-target="#tab-danger" type="button" role="tab">
+                    <i class="fas fa-exclamation-triangle me-1"></i> Danger Zone
+                </button>
+            </li>
+            <?php endif; ?>
+        </ul>
+    </div>
+</div>
+
+<!-- Tab Contents -->
+<div class="tab-content" id="profileTabsContent">
+
+    <!-- TAB 1: FULL ACCOUNT INFORMATION OVERVIEW -->
+    <div class="tab-pane fade show active" id="tab-overview" role="tabpanel">
+        
+        <!-- General Personal Details Section -->
+        <div class="custom-card mb-4 shadow-sm" style="border-radius: 14px;">
+            <div class="custom-card-header bg-light d-flex justify-content-between align-items-center">
+                <h5 class="custom-card-title mb-0"><i class="fas fa-user-check text-primary me-2"></i>Personal & Contact Information</h5>
+                <button type="button" class="btn btn-sm btn-outline-primary" onclick="switchToEditTab()">
+                    <i class="fas fa-pen me-1"></i> Edit Info
+                </button>
+            </div>
+            <div class="custom-card-body p-4">
+                <div class="row g-3">
+                    <div class="col-12 col-md-6 col-lg-3">
+                        <div class="info-field-card">
+                            <div class="info-field-label"><i class="fas fa-user text-muted me-1"></i> Full Legal Name</div>
+                            <div class="info-field-value"><?php echo htmlspecialchars($user['name']); ?></div>
+                        </div>
+                    </div>
+                    <div class="col-12 col-md-6 col-lg-3">
+                        <div class="info-field-card">
+                            <div class="info-field-label"><i class="fas fa-at text-muted me-1"></i> Username</div>
+                            <div class="info-field-value font-monospace"><?php echo htmlspecialchars($user['username']); ?></div>
+                        </div>
+                    </div>
+                    <div class="col-12 col-md-6 col-lg-3">
+                        <div class="info-field-card">
+                            <div class="info-field-label"><i class="fas fa-envelope text-muted me-1"></i> Email Address</div>
+                            <div class="info-field-value"><?php echo htmlspecialchars($user['email']); ?></div>
+                        </div>
+                    </div>
+                    <div class="col-12 col-md-6 col-lg-3">
+                        <div class="info-field-card">
+                            <div class="info-field-label"><i class="fas fa-phone text-muted me-1"></i> Contact Number</div>
+                            <div class="info-field-value"><?php echo !empty($user['phone']) ? htmlspecialchars($user['phone']) : '<span class="text-muted fst-italic">Not provided</span>'; ?></div>
+                        </div>
+                    </div>
+
+                    <div class="col-12 col-md-6 col-lg-3">
+                        <div class="info-field-card">
+                            <div class="info-field-label"><i class="fas fa-shield-alt text-muted me-1"></i> System Role</div>
+                            <div class="info-field-value text-capitalize"><?php echo str_replace('_', ' ', $user['role']); ?></div>
+                        </div>
+                    </div>
+                    <div class="col-12 col-md-6 col-lg-3">
+                        <div class="info-field-card">
+                            <div class="info-field-label"><i class="fas fa-check-circle text-muted me-1"></i> Account Status</div>
+                            <div class="info-field-value text-success fw-bold text-uppercase"><?php echo htmlspecialchars($user['status']); ?></div>
+                        </div>
+                    </div>
+                    <div class="col-12 col-md-6 col-lg-3">
+                        <div class="info-field-card">
+                            <div class="info-field-label"><i class="fas fa-calendar-plus text-muted me-1"></i> Account Created</div>
+                            <div class="info-field-value"><?php echo formatDate($user['created_at'], 'M d, Y h:i A'); ?></div>
+                        </div>
+                    </div>
+                    <div class="col-12 col-md-6 col-lg-3">
+                        <div class="info-field-card">
+                            <div class="info-field-label"><i class="fas fa-history text-muted me-1"></i> Last Updated</div>
+                            <div class="info-field-value"><?php echo !empty($user['updated_at']) ? formatDate($user['updated_at'], 'M d, Y h:i A') : '—'; ?></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ROLE SPECIFIC INFORMATION: TENANT -->
+        <?php if ($user['role'] === 'tenant'): ?>
+        <div class="custom-card mb-4 shadow-sm" style="border-radius: 14px;">
+            <div class="custom-card-header bg-light d-flex justify-content-between align-items-center">
+                <h5 class="custom-card-title mb-0"><i class="fas fa-key text-primary me-2"></i>Lease & Rented Unit Details</h5>
+                <?php if (!empty($tenantUnits)): ?>
+                    <span class="badge bg-primary rounded-pill"><?php echo count($tenantUnits); ?> Unit<?php echo count($tenantUnits) > 1 ? 's' : ''; ?> Assigned</span>
+                <?php endif; ?>
+            </div>
+            <div class="custom-card-body p-4">
+                <?php if (empty($tenantUnits)): ?>
+                    <div class="text-center py-4 text-muted">
+                        <i class="fas fa-door-closed fs-1 mb-2 text-secondary"></i>
+                        <h6>No active unit assigned yet</h6>
+                        <p class="small mb-0">Please contact property management to assign your apartment unit and register your lease contract.</p>
+                    </div>
                 <?php else: ?>
-                    <div class="user-avatar-badge mx-auto" id="profileAvatarFallback" style="width: 88px; height: 88px; font-size: 2rem;">
-                        <?php echo strtoupper(substr($user['name'], 0, 1)); ?>
+                    <div class="row g-4">
+                        <?php foreach ($tenantUnits as $idx => $tu): ?>
+                            <div class="col-12 col-lg-6">
+                                <div class="p-3 border rounded-3 bg-light h-100 position-relative">
+                                    <div class="d-flex justify-content-between align-items-start mb-3 pb-2 border-bottom">
+                                        <div>
+                                            <h6 class="fw-bold text-primary mb-1">
+                                                <i class="fas fa-door-open me-1"></i> Unit <?php echo htmlspecialchars($tu['unit_number']); ?>
+                                            </h6>
+                                            <div class="small text-muted"><?php echo htmlspecialchars($tu['property_name'] ?? 'JLD Apartment Residence'); ?></div>
+                                        </div>
+                                        <span class="badge <?php echo $tu['status'] === 'active' ? 'bg-success' : 'bg-secondary'; ?> text-uppercase">
+                                            <?php echo htmlspecialchars($tu['status']); ?> Lease
+                                        </span>
+                                    </div>
+
+                                    <div class="row g-2 small">
+                                        <div class="col-6">
+                                            <span class="text-muted d-block">Unit Type:</span>
+                                            <strong><?php echo htmlspecialchars($tu['unit_type'] ?? 'Standard'); ?></strong>
+                                        </div>
+                                        <div class="col-6">
+                                            <span class="text-muted d-block">Monthly Rent:</span>
+                                            <strong class="text-success"><?php echo formatPeso($tu['monthly_rent']); ?>/mo</strong>
+                                        </div>
+                                        <div class="col-6">
+                                            <span class="text-muted d-block">Lease Contract:</span>
+                                            <strong><?php echo formatDate($tu['lease_start']); ?> &ndash; <?php echo formatDate($tu['lease_end']); ?></strong>
+                                        </div>
+                                        <div class="col-6">
+                                            <span class="text-muted d-block">Monthly Due Day:</span>
+                                            <strong>Every <?php echo $tu['rent_due_day']; ?>th of the month</strong>
+                                        </div>
+                                        <div class="col-6">
+                                            <span class="text-muted d-block">Security Deposit Paid:</span>
+                                            <strong><?php echo formatPeso($tu['deposit_paid']); ?></strong>
+                                        </div>
+                                        <div class="col-6">
+                                            <span class="text-muted d-block">Advance Rent Paid:</span>
+                                            <strong><?php echo formatPeso($tu['advance_paid']); ?></strong>
+                                        </div>
+
+                                        <?php if (!empty($tu['emergency_contact_name'])): ?>
+                                        <div class="col-12 mt-2 pt-2 border-top">
+                                            <span class="text-muted d-block">Emergency Contact:</span>
+                                            <strong><?php echo htmlspecialchars($tu['emergency_contact_name']); ?> (<?php echo htmlspecialchars($tu['emergency_contact_phone'] ?? 'N/A'); ?>)</strong>
+                                        </div>
+                                        <?php endif; ?>
+
+                                        <?php if (!empty($tu['id_type']) && !empty($tu['id_number'])): ?>
+                                        <div class="col-12 mt-1">
+                                            <span class="text-muted d-block">Valid ID Registered:</span>
+                                            <strong><?php echo htmlspecialchars($tu['id_type']); ?>: <?php echo htmlspecialchars($tu['id_number']); ?></strong>
+                                        </div>
+                                        <?php endif; ?>
+                                    </div>
+                                </div>
+                            </div>
+                        <?php endforeach; ?>
                     </div>
                 <?php endif; ?>
             </div>
-            <div class="d-flex align-items-center justify-content-center gap-2 mb-2">
-                <h5 class="fw-bold text-dark mb-0"><?php echo htmlspecialchars($user['name']); ?></h5>
-                <button type="button" class="btn btn-sm btn-outline-primary rounded-pill px-3" id="editProfileBtn" onclick="toggleProfileEditor()">
-                    <i class="fas fa-pen me-1"></i> Edit
-                </button>
-            </div>
-            <div class="badge bg-primary-subtle text-primary border border-primary-subtle px-3 py-1 rounded-pill text-uppercase mb-3" style="font-size: 0.75rem;">
-                <?php echo str_replace('_', ' ', $user['role']); ?>
-            </div>
-            <div class="text-muted small border-top pt-3 text-start">
-                <div class="mb-2"><i class="fas fa-user-circle me-2 text-muted"></i>Username: <strong><?php echo htmlspecialchars($user['username']); ?></strong></div>
-                <div class="mb-2"><i class="fas fa-envelope me-2 text-muted"></i>Email: <strong><?php echo htmlspecialchars($user['email']); ?></strong></div>
-                <div class="mb-0"><i class="fas fa-phone me-2 text-muted"></i>Phone: <strong><?php echo htmlspecialchars($user['phone'] ?? '—'); ?></strong></div>
-            </div>
-        </div>
-
-        <div class="custom-card mt-3 p-3" id="profilePictureEditor" style="display:none;">
-            <h6 class="fw-bold text-dark mb-2"><i class="fas fa-camera text-primary me-2"></i>Profile Picture</h6>
-            <p class="text-muted small mb-3">Choose a photo, then use Edit / Crop to position it properly before saving. JPG, PNG, or WEBP up to 2 MB.</p>
-            <form id="avatarForm" action="<?php echo BASE_URL; ?>controllers/AuthController.php?action=upload_avatar" method="POST" enctype="multipart/form-data">
-                <input type="file" name="avatar" id="avatarInput" class="form-control form-control-sm mb-2" accept="image/jpeg,image/png,image/webp" required>
-                <input type="hidden" name="cropped_avatar" id="croppedAvatar">
-                <div id="avatarPreviewBox" class="mb-2 text-center" style="display:none;">
-                    <img id="avatarPreview" src="#" alt="Preview" class="rounded-circle border" style="width:72px;height:72px;object-fit:cover;">
-                </div>
-                <button type="button" id="editCropBtn" class="btn btn-outline-secondary btn-sm w-100 mb-2" style="display:none;"><i class="fas fa-crop-alt me-1"></i> Edit / Crop Photo</button>
-                <button type="submit" class="btn btn-primary btn-sm w-100"><i class="fas fa-upload me-1"></i> Save Profile Picture</button>
-            </form>
-        </div>
-
-        <div class="custom-card mt-3 p-3 bg-light border-0">
-            <div class="d-flex align-items-center gap-2 text-primary fw-semibold small mb-2">
-                <i class="fas fa-shield-alt"></i> Security Authentication
-            </div>
-            <p class="text-muted small mb-0">
-                To protect your account, any password changes require both your <strong>Current Password</strong> and a <strong>6-Digit Verification Code (OTP)</strong> sent to your email.
-            </p>
-        </div>
-
-        <?php if (in_array($user['role'], ['admin', 'tenant'], true)): ?>
-        <div class="custom-card mt-3 p-3 border-danger-subtle">
-            <h6 class="fw-bold text-danger mb-2"><i class="fas fa-user-times me-2"></i>Delete Account</h6>
-            <p class="text-muted small mb-3">Permanently remove your account and sign out. This action cannot be undone.</p>
-            <button type="button" class="btn btn-outline-danger btn-sm w-100" data-bs-toggle="modal" data-bs-target="#deleteMyAccountModal">
-                <i class="fas fa-trash-alt me-1"></i> Delete My Account
-            </button>
         </div>
         <?php endif; ?>
+
+        <!-- ROLE SPECIFIC INFORMATION: ADMIN / LANDLORD -->
+        <?php if ($user['role'] === 'admin'): ?>
+        <div class="custom-card mb-4 shadow-sm" style="border-radius: 14px;">
+            <div class="custom-card-header bg-light d-flex justify-content-between align-items-center">
+                <h5 class="custom-card-title mb-0"><i class="fas fa-building text-primary me-2"></i>Managed Properties Overview</h5>
+                <a href="<?php echo BASE_URL; ?>views/admin/units.php" class="btn btn-sm btn-outline-primary">
+                    <i class="fas fa-th-list me-1"></i> Manage Units
+                </a>
+            </div>
+            <div class="custom-card-body p-4">
+                <?php if (empty($adminProperties)): ?>
+                    <div class="text-center py-4 text-muted">
+                        <i class="fas fa-city fs-1 mb-2 text-secondary"></i>
+                        <h6>No properties assigned yet</h6>
+                        <p class="small mb-0">Properties assigned to your landlord account by the Super Admin will be listed here.</p>
+                    </div>
+                <?php else: ?>
+                    <div class="row g-3">
+                        <?php foreach ($adminProperties as $p): ?>
+                            <div class="col-12 col-md-6 col-lg-4">
+                                <div class="p-3 border rounded-3 bg-light h-100">
+                                    <h6 class="fw-bold text-primary mb-1"><i class="fas fa-building me-1"></i><?php echo htmlspecialchars($p['name']); ?></h6>
+                                    <p class="small text-muted mb-3"><i class="fas fa-map-marker-alt me-1"></i><?php echo htmlspecialchars($p['address'] ?? 'No address set'); ?></p>
+                                    <div class="d-flex justify-content-between small border-top pt-2">
+                                        <div>Total Units: <strong><?php echo $p['total_units']; ?></strong></div>
+                                        <div class="text-success">Occupied: <strong><?php echo $p['occupied_units']; ?></strong></div>
+                                        <div class="text-secondary">Vacant: <strong><?php echo $p['vacant_units']; ?></strong></div>
+                                    </div>
+                                </div>
+                            </div>
+                        <?php endforeach; ?>
+                    </div>
+                <?php endif; ?>
+            </div>
+        </div>
+        <?php endif; ?>
+
+        <!-- ROLE SPECIFIC INFORMATION: SUPER ADMIN -->
+        <?php if ($user['role'] === 'super_admin'): ?>
+        <div class="custom-card mb-4 shadow-sm" style="border-radius: 14px;">
+            <div class="custom-card-header bg-light">
+                <h5 class="custom-card-title mb-0"><i class="fas fa-server text-danger me-2"></i>Super Administrator System Scope</h5>
+            </div>
+            <div class="custom-card-body p-4">
+                <div class="row g-3">
+                    <div class="col-12 col-sm-6 col-lg-3">
+                        <div class="info-field-card text-center">
+                            <div class="info-field-label">Total Landlords</div>
+                            <div class="fs-4 fw-bold text-primary"><?php echo $superAdminStats['total_landlords'] ?? 0; ?></div>
+                        </div>
+                    </div>
+                    <div class="col-12 col-sm-6 col-lg-3">
+                        <div class="info-field-card text-center">
+                            <div class="info-field-label">Total Tenants</div>
+                            <div class="fs-4 fw-bold text-success"><?php echo $superAdminStats['total_tenants'] ?? 0; ?></div>
+                        </div>
+                    </div>
+                    <div class="col-12 col-sm-6 col-lg-3">
+                        <div class="info-field-card text-center">
+                            <div class="info-field-label">Properties Registered</div>
+                            <div class="fs-4 fw-bold text-dark"><?php echo $superAdminStats['total_properties'] ?? 0; ?></div>
+                        </div>
+                    </div>
+                    <div class="col-12 col-sm-6 col-lg-3">
+                        <div class="info-field-card text-center">
+                            <div class="info-field-label">Total Rental Units</div>
+                            <div class="fs-4 fw-bold text-info"><?php echo $superAdminStats['total_units'] ?? 0; ?></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <?php endif; ?>
+
     </div>
 
-    <!-- Edit Profile & Security Form -->
-    <div class="col-12 col-md-8" id="profileEditorPanel" style="display:none;">
-        <div class="custom-card">
+    <!-- TAB 2: EDIT PROFILE DETAILS -->
+    <div class="tab-pane fade" id="tab-edit" role="tabpanel">
+        <div class="custom-card shadow-sm" style="border-radius: 14px;">
             <div class="custom-card-header bg-light">
-                <h5 class="custom-card-title"><i class="fas fa-user-edit text-primary me-2"></i>Edit Profile & Security Settings</h5>
+                <h5 class="custom-card-title mb-0"><i class="fas fa-user-edit text-primary me-2"></i>Update Personal Details</h5>
             </div>
-            <div class="custom-card-body">
-                <form id="profileForm" action="<?php echo BASE_URL; ?>controllers/AuthController.php?action=update_profile" method="POST" onsubmit="return validateProfileForm()">
-                    <h6 class="fw-bold text-dark mb-3">Personal Information</h6>
-                    <div class="row g-3 mb-4">
+            <div class="custom-card-body p-4">
+                <form action="<?php echo BASE_URL; ?>controllers/AuthController.php?action=update_profile" method="POST">
+                    <div class="row g-3">
                         <div class="col-md-6">
                             <label class="form-label small fw-semibold">Full Name <span class="text-danger">*</span></label>
                             <input type="text" name="name" class="form-control" value="<?php echo htmlspecialchars($user['name']); ?>" required>
                         </div>
                         <div class="col-md-6">
+                            <label class="form-label small fw-semibold">Username <span class="text-muted">(Login ID)</span></label>
+                            <input type="text" class="form-control bg-light" value="<?php echo htmlspecialchars($user['username']); ?>" readonly>
+                            <small class="text-muted">Username cannot be changed.</small>
+                        </div>
+                        <div class="col-md-6">
                             <label class="form-label small fw-semibold">Email Address <span class="text-danger">*</span></label>
-                            <input type="email" name="email" id="profileEmail" class="form-control" value="<?php echo htmlspecialchars($user['email']); ?>" required>
+                            <input type="email" name="email" class="form-control" value="<?php echo htmlspecialchars($user['email']); ?>" required>
+                            <small class="text-muted">Used for security OTP verification and billing notices.</small>
                         </div>
                         <div class="col-md-6">
                             <label class="form-label small fw-semibold">Mobile Phone Number</label>
-                            <input type="text" name="phone" class="form-control" value="<?php echo htmlspecialchars($user['phone'] ?? ''); ?>" placeholder="0917-XXX-XXXX">
+                            <input type="text" name="phone" class="form-control" value="<?php echo htmlspecialchars($user['phone'] ?? ''); ?>" placeholder="09171234567" maxlength="11" oninput="this.value=this.value.replace(/[^0-9]/g,'')">
                         </div>
                     </div>
 
-                    <div class="border-top pt-3 mb-3">
-                        <div class="d-flex align-items-center justify-content-between mb-1">
-                            <h6 class="fw-bold text-dark mb-0">Change Password & Authentication</h6>
-                            <span class="badge bg-secondary-subtle text-secondary small">Optional</span>
-                        </div>
-                        <small class="text-muted d-block mb-3">Leave blank if you do not want to change your password.</small>
-
-                        <div class="alert alert-info py-2 px-3 small border-0 d-flex align-items-start gap-2 mb-3">
-                            <i class="fas fa-info-circle text-info mt-1"></i>
-                            <div>
-                                To change your password, enter your <strong>Current Password</strong>, click <strong>"Send OTP"</strong> to receive an authentication code at <strong><?php echo htmlspecialchars($maskedEmail); ?></strong>, and enter the code below.
-                            </div>
-                        </div>
-
-                        <div class="row g-3 mb-3">
-                            <div class="col-md-6">
-                                <label class="form-label small fw-semibold">Current Password</label>
-                                <input type="password" name="current_password" id="current_password" class="form-control" placeholder="••••••••">
-                            </div>
-                            <div class="col-md-6">
-                                <label class="form-label small fw-semibold">
-                                    Email Verification Code (OTP)
-                                </label>
-                                <div class="input-group">
-                                    <input type="text" name="otp_code" id="otp_code" class="form-control font-monospace fw-bold text-center" placeholder="••••••" maxlength="6" pattern="[0-9]{6}">
-                                    <button class="btn btn-outline-primary fw-semibold" type="button" id="btnSendOtp">
-                                        <i class="fas fa-paper-plane me-1"></i> <span id="btnSendOtpText">Send OTP</span>
-                                    </button>
-                                </div>
-                                <div id="otpFeedback" class="small mt-1" style="display: none;"></div>
-                            </div>
-                        </div>
-
-                        <div class="row g-3 mb-4">
-                            <div class="col-md-6">
-                                <label class="form-label small fw-semibold">New Password</label>
-                                <input type="password" name="new_password" id="new_password" class="form-control" placeholder="Minimum 6 characters" minlength="6">
-                            </div>
-                            <div class="col-md-6">
-                                <label class="form-label small fw-semibold">Confirm New Password</label>
-                                <input type="password" name="confirm_password" id="confirm_password" class="form-control" placeholder="Repeat new password" minlength="6">
-                            </div>
-                        </div>
-                    </div>
-
-                    <div class="text-end d-flex justify-content-end gap-2">
-                        <button type="button" class="btn btn-light border px-4" onclick="toggleProfileEditor(false)">Cancel</button>
+                    <div class="text-end border-top pt-3 mt-4">
                         <button type="submit" class="btn btn-primary px-4">
-                            <i class="fas fa-save me-1"></i> Save Profile Changes
+                            <i class="fas fa-save me-1"></i> Save Changes
                         </button>
                     </div>
                 </form>
             </div>
         </div>
     </div>
+
+    <!-- TAB 3: PASSWORD & SECURITY -->
+    <div class="tab-pane fade" id="tab-security" role="tabpanel">
+        <div class="custom-card shadow-sm" style="border-radius: 14px;">
+            <div class="custom-card-header bg-light">
+                <h5 class="custom-card-title mb-0"><i class="fas fa-shield-alt text-primary me-2"></i>Change Password & Security Authentication</h5>
+            </div>
+            <div class="custom-card-body p-4">
+                <form id="securityPasswordForm" action="<?php echo BASE_URL; ?>controllers/AuthController.php?action=update_profile" method="POST" onsubmit="return validateSecurityForm()">
+                    <input type="hidden" name="name" value="<?php echo htmlspecialchars($user['name']); ?>">
+                    <input type="hidden" name="email" value="<?php echo htmlspecialchars($user['email']); ?>">
+                    <input type="hidden" name="phone" value="<?php echo htmlspecialchars($user['phone'] ?? ''); ?>">
+
+                    <div class="alert alert-info py-3 px-3 small border-0 d-flex align-items-start gap-2 mb-4" style="border-radius: 10px;">
+                        <i class="fas fa-info-circle text-info fs-5 mt-1"></i>
+                        <div>
+                            To change your password, enter your <strong>Current Password</strong>, click <strong>"Send OTP"</strong> to receive an authentication code at <strong><?php echo htmlspecialchars($maskedEmail); ?></strong>, and enter the code below.
+                        </div>
+                    </div>
+
+                    <div class="row g-3 mb-3">
+                        <div class="col-md-6">
+                            <label class="form-label small fw-semibold">Current Password <span class="text-danger">*</span></label>
+                            <div class="input-group">
+                                <input type="password" name="current_password" id="sec_current_password" class="form-control" placeholder="••••••••" required>
+                                <button type="button" class="btn btn-outline-secondary" onclick="toggleSecPassword('sec_current_password', this)">
+                                    <i class="fas fa-eye"></i>
+                                </button>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label small fw-semibold">Email Verification Code (OTP) <span class="text-danger">*</span></label>
+                            <div class="input-group">
+                                <input type="text" name="otp_code" id="sec_otp_code" class="form-control font-monospace fw-bold text-center" placeholder="••••••" maxlength="6" pattern="[0-9]{6}" required>
+                                <button class="btn btn-outline-primary fw-semibold" type="button" id="btnSendOtp">
+                                    <i class="fas fa-paper-plane me-1"></i> <span id="btnSendOtpText">Send OTP</span>
+                                </button>
+                            </div>
+                            <div id="otpFeedback" class="small mt-1" style="display: none;"></div>
+                        </div>
+                    </div>
+
+                    <div class="row g-3 mb-4">
+                        <div class="col-md-6">
+                            <label class="form-label small fw-semibold">New Password <span class="text-danger">*</span></label>
+                            <div class="input-group">
+                                <input type="password" name="new_password" id="sec_new_password" class="form-control" placeholder="Minimum 6 characters" minlength="6" required onkeyup="checkSecPasswordStrength(this.value)">
+                                <button type="button" class="btn btn-outline-secondary" onclick="toggleSecPassword('sec_new_password', this)">
+                                    <i class="fas fa-eye"></i>
+                                </button>
+                            </div>
+
+                            <!-- Password Strength Meter -->
+                            <div class="mt-2" id="secStrengthMeter" style="display:none;">
+                                <div class="d-flex justify-content-between align-items-center mb-1">
+                                    <span class="small text-muted" style="font-size:0.75rem;">Password Strength:</span>
+                                    <span id="secStrengthLabel" class="badge bg-secondary" style="font-size:0.7rem;">None</span>
+                                </div>
+                                <div class="progress" style="height: 6px; border-radius: 3px;">
+                                    <div id="secStrengthProgressBar" class="progress-bar" role="progressbar" style="width: 0%;"></div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="col-md-6">
+                            <label class="form-label small fw-semibold">Confirm New Password <span class="text-danger">*</span></label>
+                            <div class="input-group">
+                                <input type="password" name="confirm_password" id="sec_confirm_password" class="form-control" placeholder="Repeat new password" minlength="6" required>
+                                <button type="button" class="btn btn-outline-secondary" onclick="toggleSecPassword('sec_confirm_password', this)">
+                                    <i class="fas fa-eye"></i>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="text-end border-top pt-3">
+                        <button type="submit" class="btn btn-primary px-4">
+                            <i class="fas fa-key me-1"></i> Update Password
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- TAB 4: DANGER ZONE (DELETE ACCOUNT) -->
+    <?php if (in_array($user['role'], ['admin', 'tenant'], true)): ?>
+    <div class="tab-pane fade" id="tab-danger" role="tabpanel">
+        <div class="custom-card border-danger shadow-sm" style="border-radius: 14px;">
+            <div class="custom-card-header bg-danger text-white">
+                <h5 class="custom-card-title mb-0"><i class="fas fa-exclamation-triangle me-2"></i>Delete User Account</h5>
+            </div>
+            <div class="custom-card-body p-4">
+                <div class="row align-items-center">
+                    <div class="col-12 col-md-8">
+                        <h6 class="fw-bold text-danger mb-1">Permanently Remove Your Account</h6>
+                        <p class="text-muted small mb-0">Once you delete your account, your profile and login access will be permanently removed. This action cannot be undone.</p>
+                    </div>
+                    <div class="col-12 col-md-4 text-md-end mt-3 mt-md-0">
+                        <button type="button" class="btn btn-outline-danger" data-bs-toggle="modal" data-bs-target="#deleteMyAccountModal">
+                            <i class="fas fa-trash-alt me-1"></i> Delete My Account
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <?php endif; ?>
+
 </div>
 
 
-<!-- Profile Picture Crop Modal -->
-<div class="modal fade" id="cropAvatarModal" tabindex="-1" aria-hidden="true">
+<!-- ========================================== -->
+<!-- MODAL: INTERACTIVE PROFILE PICTURE CROPPER -->
+<!-- ========================================== -->
+<div class="modal fade" id="cropAvatarModal" tabindex="-1" aria-labelledby="cropAvatarModalLabel" aria-hidden="true" data-bs-backdrop="static">
     <div class="modal-dialog modal-dialog-centered modal-lg">
-        <div class="modal-content border-0 shadow-lg" style="border-radius:18px;overflow:hidden;">
-            <div class="modal-header border-0">
-                <h5 class="modal-title fw-bold"><i class="fas fa-crop-alt text-primary me-2"></i>Adjust Profile Picture</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        <div class="modal-content border-0 shadow-lg" style="border-radius: 18px; overflow: hidden;">
+            <div class="modal-header border-bottom bg-light">
+                <h5 class="modal-title fw-bold text-dark" id="cropAvatarModalLabel">
+                    <i class="fas fa-crop-alt text-primary me-2"></i>Edit & Center Profile Picture
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
-            <div class="modal-body p-3">
-                <div style="max-height:65vh;overflow:hidden;background:#f1f5f9;border-radius:12px;">
-                    <img id="cropImage" src="#" alt="Crop image" style="display:block;max-width:100%;">
+            <div class="modal-body p-4">
+                
+                <!-- Step 1: File selection box -->
+                <div class="mb-3 text-center">
+                    <label class="btn btn-outline-primary px-4 py-2 rounded-pill shadow-sm" for="avatarFileInput">
+                        <i class="fas fa-folder-open me-2"></i> Choose Photo / Upload Image
+                    </label>
+                    <input type="file" id="avatarFileInput" accept="image/jpeg,image/png,image/webp" style="display: none;">
+                    <div class="small text-muted mt-2">Supports JPG, PNG, or WEBP (Max 3 MB)</div>
                 </div>
-                <small class="text-muted d-block mt-2 text-center">Drag to position • Use the zoom controls to frame your photo.</small>
-                <div class="d-flex justify-content-center gap-2 mt-3">
-                    <button type="button" class="btn btn-light border" id="zoomOutBtn"><i class="fas fa-search-minus"></i></button>
-                    <button type="button" class="btn btn-light border" id="zoomInBtn"><i class="fas fa-search-plus"></i></button>
-                    <button type="button" class="btn btn-light border" id="rotateBtn"><i class="fas fa-redo"></i> Rotate</button>
+
+                <div class="row g-4 align-items-center">
+                    <!-- Cropper Canvas Viewport -->
+                    <div class="col-12 col-md-8">
+                        <div style="width: 100%; height: 350px; background: #0f172a; border-radius: 12px; overflow: hidden; display: flex; align-items: center; justify-content: center; position: relative;">
+                            <img id="cropperImageSource" src="<?php echo !empty($user['avatar']) ? BASE_URL . htmlspecialchars($user['avatar']) : BASE_URL . 'assets/images/default-avatar.png'; ?>" alt="Crop Source" style="max-width: 100%; display: block;">
+                        </div>
+                        <small class="text-muted d-block text-center mt-2">
+                            <i class="fas fa-hand-paper me-1"></i> Drag to move/center &bull; Scroll to zoom
+                        </small>
+                    </div>
+
+                    <!-- Live Circle Preview & Quick Controls -->
+                    <div class="col-12 col-md-4 text-center">
+                        <div class="p-3 bg-light rounded-3 border">
+                            <span class="small fw-semibold text-muted text-uppercase d-block mb-2">Live Avatar Preview</span>
+                            <div class="crop-preview-circle shadow-sm" id="cropCirclePreview"></div>
+                            <small class="text-muted d-block mt-2" style="font-size: 0.75rem;">This circle shows how your profile photo appears to others.</small>
+
+                            <!-- Tool buttons -->
+                            <div class="d-flex flex-wrap justify-content-center gap-1 mt-3">
+                                <button type="button" class="btn btn-light border btn-sm" id="btnZoomIn" title="Zoom In">
+                                    <i class="fas fa-search-plus"></i>
+                                </button>
+                                <button type="button" class="btn btn-light border btn-sm" id="btnZoomOut" title="Zoom Out">
+                                    <i class="fas fa-search-minus"></i>
+                                </button>
+                                <button type="button" class="btn btn-light border btn-sm" id="btnRotateLeft" title="Rotate Left 90°">
+                                    <i class="fas fa-undo"></i>
+                                </button>
+                                <button type="button" class="btn btn-light border btn-sm" id="btnRotateRight" title="Rotate Right 90°">
+                                    <i class="fas fa-redo"></i>
+                                </button>
+                                <button type="button" class="btn btn-light border btn-sm" id="btnResetCrop" title="Reset to Center">
+                                    <i class="fas fa-crosshairs"></i> Center
+                                </button>
+                            </div>
+                        </div>
+                    </div>
                 </div>
+
+                <div id="cropAlertFeedback" class="alert small mt-3" style="display: none;"></div>
             </div>
-            <div class="modal-footer border-0">
-                <button type="button" class="btn btn-light border" data-bs-dismiss="modal">Cancel</button>
-                <button type="button" class="btn btn-primary fw-semibold" id="applyCropBtn"><i class="fas fa-check me-1"></i> Use This Crop</button>
+            <div class="modal-footer border-top bg-light">
+                <button type="button" class="btn btn-outline-secondary px-3" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-primary px-4" id="btnSaveCroppedAvatar">
+                    <i class="fas fa-check-circle me-1"></i> Apply & Save Picture
+                </button>
             </div>
         </div>
     </div>
 </div>
 
+
+<!-- MODAL: DELETE ACCOUNT -->
 <?php if (in_array($user['role'], ['admin', 'tenant'], true)): ?>
 <div class="modal fade" id="deleteMyAccountModal" tabindex="-1" aria-labelledby="deleteMyAccountModalLabel" aria-hidden="true">
     <div class="modal-dialog modal-dialog-centered">
@@ -236,89 +765,231 @@ include_once dirname(dirname(__DIR__)) . '/includes/header.php';
 </div>
 <?php endif; ?>
 
+<!-- Cropper.js JavaScript -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.6.2/cropper.min.js"></script>
+
 <script>
-function toggleProfileEditor(force) {
-    const panel = document.getElementById('profileEditorPanel');
-    const pictureEditor = document.getElementById('profilePictureEditor');
-    const btn = document.getElementById('editProfileBtn');
-    if (!panel) return;
-
-    const show = typeof force === 'boolean' ? force : panel.style.display === 'none';
-    panel.style.display = show ? 'block' : 'none';
-    if (pictureEditor) pictureEditor.style.display = show ? 'block' : 'none';
-
-    if (btn) {
-        btn.innerHTML = show
-            ? '<i class="fas fa-times me-1"></i> Close'
-            : '<i class="fas fa-pen me-1"></i> Edit';
-        btn.classList.toggle('btn-outline-secondary', show);
-        btn.classList.toggle('btn-outline-primary', !show);
-    }
-
-    if (show) {
-        panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+// Switch to Edit Tab programmatically
+function switchToEditTab() {
+    const triggerEl = document.getElementById('edit-tab');
+    if (triggerEl) {
+        bootstrap.Tab.getInstance(triggerEl) ? bootstrap.Tab.getInstance(triggerEl).show() : new bootstrap.Tab(triggerEl).show();
     }
 }
 
-let avatarCropper = null;
-const avatarForm = document.getElementById('avatarForm');
-const avatarInput = document.getElementById('avatarInput');
+// Password Visibility Toggle
+function toggleSecPassword(fieldId, btn) {
+    const input = document.getElementById(fieldId);
+    if (!input) return;
+    const isPassword = input.type === 'password';
+    input.type = isPassword ? 'text' : 'password';
+    btn.innerHTML = isPassword ? '<i class="fas fa-eye-slash"></i>' : '<i class="fas fa-eye"></i>';
+}
+
+// Password Strength Meter
+function checkSecPasswordStrength(password) {
+    const meter = document.getElementById('secStrengthMeter');
+    const label = document.getElementById('secStrengthLabel');
+    const bar = document.getElementById('secStrengthProgressBar');
+
+    if (!password) {
+        meter.style.display = 'none';
+        return;
+    }
+    meter.style.display = 'block';
+
+    let score = 0;
+    if (password.length >= 6) score++;
+    if (password.length >= 10) score++;
+    if (/[A-Z]/.test(password)) score++;
+    if (/[0-9]/.test(password)) score++;
+    if (/[^A-Za-z0-9]/.test(password)) score++;
+
+    if (score <= 1) {
+        bar.style.width = '25%';
+        bar.className = 'progress-bar bg-danger';
+        label.className = 'badge bg-danger';
+        label.textContent = 'Weak';
+    } else if (score <= 2) {
+        bar.style.width = '50%';
+        bar.className = 'progress-bar bg-warning';
+        label.className = 'badge bg-warning text-dark';
+        label.textContent = 'Fair';
+    } else if (score <= 4) {
+        bar.style.width = '75%';
+        bar.className = 'progress-bar bg-info';
+        label.className = 'badge bg-info text-dark';
+        label.textContent = 'Good';
+    } else {
+        bar.style.width = '100%';
+        bar.className = 'progress-bar bg-success';
+        label.className = 'badge bg-success';
+        label.textContent = 'Strong';
+    }
+}
+
+// ==========================================
+// CROPPER.JS PROFILE PICTURE LOGIC
+// ==========================================
+let cropperInstance = null;
 const cropModalEl = document.getElementById('cropAvatarModal');
 const cropModal = cropModalEl ? new bootstrap.Modal(cropModalEl) : null;
-const cropImage = document.getElementById('cropImage');
-const croppedAvatar = document.getElementById('croppedAvatar');
-const editCropBtn = document.getElementById('editCropBtn');
+const cropperImageSource = document.getElementById('cropperImageSource');
+const avatarFileInput = document.getElementById('avatarFileInput');
+const btnSaveCroppedAvatar = document.getElementById('btnSaveCroppedAvatar');
+const cropAlertFeedback = document.getElementById('cropAlertFeedback');
 
-avatarInput?.addEventListener('change', function() {
+function openAvatarCropModal() {
+    cropAlertFeedback.style.display = 'none';
+    cropModal.show();
+
+    cropModalEl.addEventListener('shown.bs.modal', function initCropperOnShown() {
+        cropModalEl.removeEventListener('shown.bs.modal', initCropperOnShown);
+        initCropper();
+    });
+}
+
+function initCropper() {
+    if (cropperInstance) {
+        cropperInstance.destroy();
+    }
+    cropperInstance = new Cropper(cropperImageSource, {
+        aspectRatio: 1,
+        viewMode: 1,
+        dragMode: 'move',
+        autoCropArea: 0.9,
+        restore: false,
+        guides: true,
+        center: true,
+        highlight: false,
+        cropBoxMovable: true,
+        cropBoxResizable: true,
+        toggleDragModeOnDblclick: false,
+        preview: '#cropCirclePreview'
+    });
+}
+
+// Handle file upload selection
+avatarFileInput.addEventListener('change', function() {
     const file = this.files?.[0];
     if (!file) return;
-    if (file.size > 2 * 1024 * 1024) { alert('Profile picture must be 2 MB or smaller.'); this.value = ''; return; }
-    if (!file.type.match(/^image\/(jpeg|png|webp)$/)) { alert('Only JPG, PNG, and WEBP images are allowed.'); this.value = ''; return; }
+
+    if (file.size > 3 * 1024 * 1024) {
+        alert('Please choose an image file smaller than 3 MB.');
+        this.value = '';
+        return;
+    }
+
+    if (!file.type.match(/^image\/(jpeg|png|webp)$/)) {
+        alert('Only JPG, PNG, and WEBP image files are allowed.');
+        this.value = '';
+        return;
+    }
+
     const reader = new FileReader();
-    reader.onload = e => {
-        cropImage.src = e.target.result;
-        cropImage.onload = () => {
-            if (avatarCropper) avatarCropper.destroy();
-            avatarCropper = new Cropper(cropImage, { aspectRatio: 1, viewMode: 1, dragMode: 'move', autoCropArea: 0.9, responsive: true, background: false });
-            cropModal?.show();
-        };
+    reader.onload = function(e) {
+        if (cropperInstance) {
+            cropperInstance.destroy();
+        }
+        cropperImageSource.src = e.target.result;
+        initCropper();
     };
     reader.readAsDataURL(file);
 });
 
-editCropBtn?.addEventListener('click', () => cropModal?.show());
-document.getElementById('zoomInBtn')?.addEventListener('click', () => avatarCropper?.zoom(0.1));
-document.getElementById('zoomOutBtn')?.addEventListener('click', () => avatarCropper?.zoom(-0.1));
-document.getElementById('rotateBtn')?.addEventListener('click', () => avatarCropper?.rotate(90));
-document.getElementById('applyCropBtn')?.addEventListener('click', () => {
-    if (!avatarCropper) return;
-    avatarCropper.getCroppedCanvas({ width: 600, height: 600, imageSmoothingQuality: 'high' }).toBlob(blob => {
-        const dt = new DataTransfer();
-        const file = new File([blob], 'profile-cropped.jpg', { type: 'image/jpeg' });
-        dt.items.add(file);
-        avatarInput.files = dt.files;
-        croppedAvatar.value = '1';
-        document.getElementById('avatarPreview').src = URL.createObjectURL(blob);
-        document.getElementById('avatarPreviewBox').style.display = 'block';
-        editCropBtn.style.display = 'block';
-        cropModal?.hide();
-    }, 'image/jpeg', 0.9);
-});
+// Controls
+document.getElementById('btnZoomIn').addEventListener('click', () => cropperInstance?.zoom(0.1));
+document.getElementById('btnZoomOut').addEventListener('click', () => cropperInstance?.zoom(-0.1));
+document.getElementById('btnRotateLeft').addEventListener('click', () => cropperInstance?.rotate(-90));
+document.getElementById('btnRotateRight').addEventListener('click', () => cropperInstance?.rotate(90));
+document.getElementById('btnResetCrop').addEventListener('click', () => cropperInstance?.reset());
 
-avatarForm?.addEventListener('submit', function(e) {
-    if (avatarInput.files?.length && !croppedAvatar.value) {
-        e.preventDefault();
-        alert('Please click "Edit / Crop Photo" and choose how you want to position your picture before saving.');
-        cropModal?.show();
+// Save Cropped Avatar via AJAX
+btnSaveCroppedAvatar.addEventListener('click', function() {
+    if (!cropperInstance) return;
+
+    const originalBtnHtml = btnSaveCroppedAvatar.innerHTML;
+    btnSaveCroppedAvatar.disabled = true;
+    btnSaveCroppedAvatar.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i> Saving...';
+
+    cropAlertFeedback.style.display = 'none';
+
+    // Get 600x600 cropped canvas
+    const canvas = cropperInstance.getCroppedCanvas({
+        width: 600,
+        height: 600,
+        imageSmoothingEnabled: true,
+        imageSmoothingQuality: 'high'
+    });
+
+    if (!canvas) {
+        alert('Could not process the cropped image.');
+        btnSaveCroppedAvatar.disabled = false;
+        btnSaveCroppedAvatar.innerHTML = originalBtnHtml;
+        return;
     }
+
+    const base64Image = canvas.toDataURL('image/jpeg', 0.9);
+
+    const formData = new FormData();
+    formData.append('is_ajax', '1');
+    formData.append('cropped_image_data', base64Image);
+
+    fetch('<?php echo BASE_URL; ?>controllers/AuthController.php?action=upload_avatar', {
+        method: 'POST',
+        headers: { 'X-Requested-With': 'XMLHttpRequest' },
+        body: formData
+    })
+    .then(response => response.json())
+    .then(data => {
+        btnSaveCroppedAvatar.disabled = false;
+        btnSaveCroppedAvatar.innerHTML = originalBtnHtml;
+
+        if (data.success) {
+            cropAlertFeedback.className = 'alert alert-success small mt-3';
+            cropAlertFeedback.innerHTML = '<i class="fas fa-check-circle me-1"></i> ' + data.message;
+            cropAlertFeedback.style.display = 'block';
+
+            // Update main avatar images on page
+            const mainImg = document.getElementById('mainAvatarDisplay');
+            const fallback = document.getElementById('mainAvatarFallback');
+            if (mainImg) {
+                mainImg.src = data.avatar_url + '?t=' + new Date().getTime();
+            } else if (fallback) {
+                fallback.outerHTML = '<img src="' + data.avatar_url + '?t=' + new Date().getTime() + '" alt="Profile Picture" id="mainAvatarDisplay" class="profile-avatar-img">';
+            }
+
+            // Also update navbar avatar if present
+            const navAvatar = document.querySelector('.navbar .rounded-circle');
+            if (navAvatar) {
+                navAvatar.src = data.avatar_url + '?t=' + new Date().getTime();
+            }
+
+            setTimeout(() => {
+                cropModal.hide();
+            }, 1000);
+        } else {
+            cropAlertFeedback.className = 'alert alert-danger small mt-3';
+            cropAlertFeedback.innerHTML = '<i class="fas fa-exclamation-triangle me-1"></i> ' + data.message;
+            cropAlertFeedback.style.display = 'block';
+        }
+    })
+    .catch(err => {
+        btnSaveCroppedAvatar.disabled = false;
+        btnSaveCroppedAvatar.innerHTML = originalBtnHtml;
+        cropAlertFeedback.className = 'alert alert-danger small mt-3';
+        cropAlertFeedback.innerHTML = '<i class="fas fa-times-circle me-1"></i> Network error. Please try again.';
+        cropAlertFeedback.style.display = 'block';
+    });
 });
 
-
+// ==========================================
+// OTP SENDER & SECURITY FORM VALIDATION
+// ==========================================
 let otpTimer = null;
 let countdown = 60;
 
-document.getElementById('btnSendOtp').addEventListener('click', function() {
+document.getElementById('btnSendOtp')?.addEventListener('click', function() {
     const btn = this;
     const btnText = document.getElementById('btnSendOtpText');
     const feedback = document.getElementById('otpFeedback');
@@ -338,7 +1009,7 @@ document.getElementById('btnSendOtp').addEventListener('click', function() {
         if (data.success) {
             feedback.className = 'small mt-1 text-success fw-medium';
             feedback.innerHTML = '<i class="fas fa-check-circle me-1"></i> ' + data.message;
-            document.getElementById('otp_code').focus();
+            document.getElementById('sec_otp_code')?.focus();
 
             // Start 60-second cooldown timer
             countdown = 60;
@@ -369,50 +1040,46 @@ document.getElementById('btnSendOtp').addEventListener('click', function() {
     });
 });
 
-function validateProfileForm() {
-    const currentPass = document.getElementById('current_password').value.trim();
-    const otpCode = document.getElementById('otp_code').value.trim();
-    const newPass = document.getElementById('new_password').value.trim();
-    const confirmPass = document.getElementById('confirm_password').value.trim();
+function validateSecurityForm() {
+    const currentPass = document.getElementById('sec_current_password').value.trim();
+    const otpCode = document.getElementById('sec_otp_code').value.trim();
+    const newPass = document.getElementById('sec_new_password').value.trim();
+    const confirmPass = document.getElementById('sec_confirm_password').value.trim();
 
-    const isChangingPassword = newPass !== '' || confirmPass !== '' || currentPass !== '' || otpCode !== '';
+    if (currentPass === '') {
+        alert('Please enter your Current Password to authenticate.');
+        document.getElementById('sec_current_password').focus();
+        return false;
+    }
 
-    if (isChangingPassword) {
-        if (currentPass === '') {
-            alert('Please enter your Current Password to authenticate the password change.');
-            document.getElementById('current_password').focus();
-            return false;
-        }
+    if (otpCode === '') {
+        alert('Please click "Send OTP" and enter the 6-digit verification code sent to your email.');
+        document.getElementById('sec_otp_code').focus();
+        return false;
+    }
 
-        if (otpCode === '') {
-            alert('Please click "Send OTP" to receive a verification code at your email, then enter the 6-digit OTP code.');
-            document.getElementById('otp_code').focus();
-            return false;
-        }
+    if (otpCode.length !== 6 || !/^\d{6}$/.test(otpCode)) {
+        alert('Please enter a valid 6-digit numeric OTP verification code.');
+        document.getElementById('sec_otp_code').focus();
+        return false;
+    }
 
-        if (otpCode.length !== 6 || !/^\d{6}$/.test(otpCode)) {
-            alert('Please enter a valid 6-digit numeric OTP verification code.');
-            document.getElementById('otp_code').focus();
-            return false;
-        }
+    if (newPass === '') {
+        alert('Please enter your New Password.');
+        document.getElementById('sec_new_password').focus();
+        return false;
+    }
 
-        if (newPass === '') {
-            alert('Please enter your New Password.');
-            document.getElementById('new_password').focus();
-            return false;
-        }
+    if (newPass.length < 6) {
+        alert('Your New Password must be at least 6 characters in length.');
+        document.getElementById('sec_new_password').focus();
+        return false;
+    }
 
-        if (newPass.length < 6) {
-            alert('Your New Password must be at least 6 characters in length.');
-            document.getElementById('new_password').focus();
-            return false;
-        }
-
-        if (newPass !== confirmPass) {
-            alert('New Password and Confirm New Password do not match. Please re-enter.');
-            document.getElementById('confirm_password').focus();
-            return false;
-        }
+    if (newPass !== confirmPass) {
+        alert('New Password and Confirm New Password do not match. Please re-enter.');
+        document.getElementById('sec_confirm_password').focus();
+        return false;
     }
 
     return true;

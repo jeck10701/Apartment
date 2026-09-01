@@ -102,7 +102,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     if ($action === 'update_settings') {
         $settings = [
-            'system_name'          => trim($_POST['system_name'] ?? 'ResiPro Apartment Management'),
+            'system_name'          => trim($_POST['system_name'] ?? 'JLD Apartment Management'),
             'currency_symbol'      => trim($_POST['currency_symbol'] ?? '₱'),
             'company_email'        => trim($_POST['company_email'] ?? ''),
             'company_phone'        => trim($_POST['company_phone'] ?? ''),

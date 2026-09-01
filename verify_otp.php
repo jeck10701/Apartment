@@ -25,7 +25,7 @@ $maskedEmail = (strlen($namePart) > 2) ? substr($namePart, 0, 2) . str_repeat('*
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Enter Verification Code - ResiPro</title>
+    <title>Enter Verification Code - JLD Apartment</title>
     
     <!-- Google Fonts & Bootstrap 5.3 -->
     <link rel="preconnect" href="https://fonts.googleapis.com">

@@ -8,30 +8,43 @@ $pdo = getDBConnection();
 $pageTitle = 'My Billing & Payments';
 $userId = $_SESSION['user_id'];
 
-// Fetch tenant record
-$tStmt = $pdo->prepare("SELECT id, first_name, last_name, unit_id FROM tenants WHERE user_id = ? AND status = 'active' LIMIT 1");
+// Fetch all active tenant records for this user
+$tStmt = $pdo->prepare("SELECT id, unit_id FROM tenants WHERE user_id = ? AND status = 'active'");
 $tStmt->execute([$userId]);
-$tenant = $tStmt->fetch();
+$tenantRows = $tStmt->fetchAll();
 
-if (!$tenant) {
-    $tenant = $pdo->query("SELECT id, first_name, last_name, unit_id FROM tenants WHERE status = 'active' LIMIT 1")->fetch();
+if (empty($tenantRows)) {
+    $fallbackStmt = $pdo->query("SELECT id, unit_id FROM tenants WHERE status = 'active' LIMIT 1");
+    $tenantRows = $fallbackStmt->fetchAll();
 }
 
-$tenantId = $tenant['id'] ?? 0;
+$tenantIds = array_filter(array_column($tenantRows, 'id'));
+$tenantId = !empty($tenantIds) ? $tenantIds[0] : 0;
 
-// Fetch all invoices for this tenant
+// Fetch all invoices for all units rented by this tenant
 $invoices = [];
-if ($tenantId) {
-    $invStmt = $pdo->prepare("SELECT * FROM invoices WHERE tenant_id = ? ORDER BY due_date DESC");
-    $invStmt->execute([$tenantId]);
+if (!empty($tenantIds)) {
+    $inPlaceholders = implode(',', array_fill(0, count($tenantIds), '?'));
+    $invStmt = $pdo->prepare("SELECT inv.*, u.unit_number 
+        FROM invoices inv 
+        JOIN units u ON inv.unit_id = u.id 
+        WHERE inv.tenant_id IN ($inPlaceholders) 
+        ORDER BY inv.due_date DESC");
+    $invStmt->execute($tenantIds);
     $invoices = $invStmt->fetchAll();
 }
 
-// Fetch all payment transactions for this tenant
+// Fetch all payment transactions for all units of this tenant
 $payments = [];
-if ($tenantId) {
-    $payStmt = $pdo->prepare("SELECT p.*, inv.invoice_number FROM payments p JOIN invoices inv ON p.invoice_id = inv.id WHERE p.tenant_id = ? ORDER BY p.payment_date DESC");
-    $payStmt->execute([$tenantId]);
+if (!empty($tenantIds)) {
+    $inPlaceholders = implode(',', array_fill(0, count($tenantIds), '?'));
+    $payStmt = $pdo->prepare("SELECT p.*, inv.invoice_number, u.unit_number 
+        FROM payments p 
+        JOIN invoices inv ON p.invoice_id = inv.id 
+        JOIN units u ON inv.unit_id = u.id 
+        WHERE p.tenant_id IN ($inPlaceholders) 
+        ORDER BY p.payment_date DESC");
+    $payStmt->execute($tenantIds);
     $payments = $payStmt->fetchAll();
 }
 
@@ -44,7 +57,7 @@ include_once dirname(dirname(__DIR__)) . '/includes/header.php';
 <div class="d-md-flex align-items-center justify-content-between mb-4">
     <div>
         <h1 class="page-title">My Billing & Statement of Account</h1>
-        <p class="page-subtitle">View past monthly invoices, check balance breakdown, and submit online payment receipts.</p>
+        <p class="page-subtitle">View past monthly invoices, check balance breakdown, and submit online payment receipts across all your rented units.</p>
     </div>
     <div class="mt-3 mt-md-0">
         <button class="btn btn-success" data-bs-toggle="modal" data-bs-target="#uploadProofModal" <?php echo empty($unpaidInvoices) ? 'disabled title="No unpaid bills"' : ''; ?>>
@@ -63,6 +76,7 @@ include_once dirname(dirname(__DIR__)) . '/includes/header.php';
             <thead>
                 <tr>
                     <th>Invoice #</th>
+                    <th>Unit</th>
                     <th>Billing Period</th>
                     <th>Due Date</th>
                     <th>Rent</th>
@@ -77,11 +91,12 @@ include_once dirname(dirname(__DIR__)) . '/includes/header.php';
             </thead>
             <tbody>
                 <?php if (empty($invoices)): ?>
-                    <tr><td colspan="11" class="text-center text-muted py-4">No billing statements available.</td></tr>
+                    <tr><td colspan="12" class="text-center text-muted py-4">No billing statements available.</td></tr>
                 <?php else: ?>
                     <?php foreach ($invoices as $inv): ?>
                         <tr>
                             <td class="font-monospace fw-bold"><?php echo htmlspecialchars($inv['invoice_number']); ?></td>
+                            <td><span class="badge bg-light text-primary border font-monospace"><?php echo htmlspecialchars($inv['unit_number']); ?></span></td>
                             <td class="small text-muted"><?php echo formatDate($inv['billing_period_start'], 'M d'); ?> - <?php echo formatDate($inv['billing_period_end'], 'M d, Y'); ?></td>
                             <td><span class="small <?php echo ($inv['balance'] > 0 && strtotime($inv['due_date']) < time()) ? 'text-danger fw-bold' : 'text-dark'; ?>"><?php echo formatDate($inv['due_date']); ?></span></td>
                             <td><?php echo formatPeso($inv['rent_amount']); ?></td>
@@ -176,7 +191,7 @@ include_once dirname(dirname(__DIR__)) . '/includes/header.php';
                             <option value="">-- Choose Invoice --</option>
                             <?php foreach ($unpaidInvoices as $ui): ?>
                                 <option value="<?php echo $ui['id']; ?>" data-balance="<?php echo $ui['balance']; ?>">
-                                    <?php echo htmlspecialchars($ui['invoice_number']); ?> — Balance: <?php echo formatPeso($ui['balance']); ?>
+                                    <?php echo htmlspecialchars($ui['invoice_number']); ?> (Unit <?php echo htmlspecialchars($ui['unit_number']); ?>) &mdash; Balance: <?php echo formatPeso($ui['balance']); ?>
                                 </option>
                             <?php endforeach; ?>
                         </select>

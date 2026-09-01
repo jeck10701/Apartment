@@ -30,7 +30,7 @@ include_once dirname(dirname(__DIR__)) . '/includes/header.php';
                 <div class="custom-card-body">
                     <div class="mb-3">
                         <label class="form-label small fw-semibold">Application / System Name</label>
-                        <input type="text" name="system_name" class="form-control" value="<?php echo htmlspecialchars($settingsRows['system_name'] ?? 'ResiPro Apartment Management'); ?>" required>
+                        <input type="text" name="system_name" class="form-control" value="<?php echo htmlspecialchars($settingsRows['system_name'] ?? 'JLD Apartment Management'); ?>" required>
                     </div>
                     <div class="mb-3">
                         <label class="form-label small fw-semibold">Currency Symbol</label>
@@ -38,7 +38,7 @@ include_once dirname(dirname(__DIR__)) . '/includes/header.php';
                     </div>
                     <div class="mb-3">
                         <label class="form-label small fw-semibold">Management Official Email</label>
-                        <input type="email" name="company_email" class="form-control" value="<?php echo htmlspecialchars($settingsRows['company_email'] ?? 'management@resipro.ph'); ?>">
+                        <input type="email" name="company_email" class="form-control" value="<?php echo htmlspecialchars($settingsRows['company_email'] ?? 'management@jldapartment.local'); ?>">
                     </div>
                     <div class="mb-3">
                         <label class="form-label small fw-semibold">Management Contact Number</label>

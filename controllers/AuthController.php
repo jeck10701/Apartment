@@ -58,7 +58,7 @@ function sendResiProEmail($to, $toName, $subject, $htmlBody, $altBody = '') {
         : RESIPRO_SMTP_USERNAME;
     $fromName = defined('RESIPRO_SMTP_FROM_NAME')
         ? RESIPRO_SMTP_FROM_NAME
-        : 'ResiPro Management';
+        : 'JLD Apartment Management';
 
     $mail->setFrom($fromEmail, $fromName);
     $mail->addAddress($to, $toName);
@@ -139,22 +139,22 @@ if ($action === 'approve_landlord') {
         logActivity('LANDLORD_APPROVED', "Super Admin approved landlord registration for {$user['name']} ({$user['email']}).");
 
         try {
-            $subject = "Account Approved! Welcome to ResiPro";
+            $subject = "Account Approved! Welcome to JLD Apartment";
             $msg = "
             <html>
             <body style='font-family: Arial, sans-serif; background-color: #f8fafc; padding: 30px;'>
                 <div style='max-width: 500px; margin: 0 auto; background: #ffffff; padding: 25px; border-radius: 12px; border: 1px solid #e2e8f0;'>
                     <h2 style='color: #16a34a; margin-top: 0;'>Account Approved!</h2>
                     <p>Hello <strong>" . htmlspecialchars($user['name']) . "</strong>,</p>
-                    <p>Great news! The Super Administrator has <strong>approved</strong> your Landlord account on <strong>ResiPro Apartment Management</strong>.</p>
+                    <p>Great news! The Super Administrator has <strong>approved</strong> your Landlord account on <strong>JLD Apartment Management</strong>.</p>
                     <p>You can now sign in to your dashboard and manage your properties, units, and tenants.</p>
                     <div style='text-align: center; margin: 25px 0;'>
-                        <a href='" . BASE_URL . "login.php' style='background-color: #2563eb; color: #ffffff; padding: 12px 28px; text-decoration: none; border-radius: 8px; font-weight: bold; display: inline-block;'>Sign In to ResiPro</a>
+                        <a href='" . BASE_URL . "login.php' style='background-color: #2563eb; color: #ffffff; padding: 12px 28px; text-decoration: none; border-radius: 8px; font-weight: bold; display: inline-block;'>Sign In to JLD Apartment</a>
                     </div>
                 </div>
             </body>
             </html>";
-            sendResiProEmail($user['email'], $user['name'], $subject, $msg, "Your ResiPro landlord account has been approved by the Super Admin! You can now log in at " . BASE_URL . "login.php");
+            sendResiProEmail($user['email'], $user['name'], $subject, $msg, "Your JLD Apartment landlord account has been approved by the Super Admin! You can now log in at " . BASE_URL . "login.php");
         } catch (\Throwable $mailErr) {}
 
         ?>
@@ -163,7 +163,7 @@ if ($action === 'approve_landlord') {
         <head>
             <meta charset="UTF-8">
             <meta name="viewport" content="width=device-width, initial-scale=1.0">
-            <title>Landlord Account Approved - ResiPro</title>
+            <title>Landlord Account Approved - JLD Apartment</title>
             <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.3/css/bootstrap.min.css">
             <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
             <style>
@@ -181,7 +181,7 @@ if ($action === 'approve_landlord') {
                     The registration request for <strong><?php echo htmlspecialchars($user['name']); ?></strong> (<code><?php echo htmlspecialchars($user['email']); ?></code>) has been successfully activated.
                 </p>
                 <div class="alert alert-success small text-start mb-4">
-                    <i class="fas fa-envelope-circle-check me-1"></i> A confirmation notification has been sent to the Landlord. They can now log in to the ResiPro portal.
+                    <i class="fas fa-envelope-circle-check me-1"></i> A confirmation notification has been sent to the Landlord. They can now log in to the JLD Apartment portal.
                 </div>
                 <a href="<?php echo BASE_URL; ?>login.php" class="btn btn-primary px-4 py-2 fw-semibold" style="border-radius: 10px;">
                     <i class="fas fa-sign-in-alt me-1"></i> Go to Sign In
@@ -323,7 +323,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             $saStmt = $pdo->query("SELECT email, name FROM users WHERE role = 'super_admin' LIMIT 1");
             $superAdmin = $saStmt->fetch();
-            $superAdminEmail = $superAdmin['email'] ?? 'superadmin@resipro.ph';
+            $superAdminEmail = $superAdmin['email'] ?? 'superadmin@jldapartment.ph';
             $superAdminName  = $superAdmin['name'] ?? 'Super Administrator';
 
             $adminOtpCode = sprintf('%06d', mt_rand(100000, 999999));
@@ -340,14 +340,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $domainPart = $parts[1] ?? '';
             $maskedSuperAdmin = (strlen($namePart) > 2) ? substr($namePart, 0, 1) . str_repeat('*', strlen($namePart) - 2) . substr($namePart, -1) . '@' . $domainPart : $superAdminEmail;
 
-            $subject = "[APPROVAL CODE: $adminOtpCode] Landlord Registration Request - ResiPro";
+            $subject = "[APPROVAL CODE: $adminOtpCode] Landlord Registration Request - JLD Apartment";
             $message = "
             <html>
             <body style='font-family: Arial, sans-serif; background-color: #f8fafc; padding: 30px;'>
                 <div style='max-width: 520px; margin: 0 auto; background: #ffffff; padding: 25px; border-radius: 12px; border: 1px solid #e2e8f0; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1);'>
                     <h2 style='color: #2563eb; margin-top: 0;'>Landlord Registration Request</h2>
                     <p>Hello <strong>$superAdminName</strong>,</p>
-                    <p>A new applicant is requesting authorization to register as a <strong>Property Owner / Landlord</strong> on ResiPro:</p>
+                    <p>A new applicant is requesting authorization to register as a <strong>Property Owner / Landlord</strong> on JLD Apartment:</p>
                     <div style='background: #f1f5f9; padding: 12px 16px; border-radius: 8px; margin: 15px 0;'>
                         <p style='margin: 3px 0;'><strong>Applicant Name:</strong> " . htmlspecialchars($applicantName) . "</p>
                         <p style='margin: 3px 0;'><strong>Applicant Email:</strong> " . htmlspecialchars($applicantEmail) . "</p>
@@ -366,7 +366,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $superAdminName,
                 $subject,
                 $message,
-                "ResiPro landlord registration approval code: $adminOtpCode. Provide this code to $applicantName ($applicantEmail) if approved."
+                "JLD Apartment landlord registration approval code: $adminOtpCode. Provide this code to $applicantName ($applicantEmail) if approved."
             );
 
             logActivity('SUPER_ADMIN_CODE_REQUESTED', "Landlord approval code requested for $applicantName ($applicantEmail).");
@@ -422,8 +422,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             redirect(BASE_URL . 'register.php');
         }
 
-        if (!preg_match('/^[0-9+() .\-]{7,20}$/', $phone)) {
-            setFlash('danger', 'Please enter a valid phone number.');
+        if (!preg_match('/^[0-9]{11}$/', $phone)) {
+            setFlash('danger', 'Contact number must be exactly 11 numeric digits (e.g. 09171234567) and cannot contain letters.');
             redirect(BASE_URL . 'register.php');
         }
 
@@ -466,7 +466,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
 
                 $saStmt = $pdo->query("SELECT email FROM users WHERE role = 'super_admin' LIMIT 1");
-                $superAdminEmail = $saStmt->fetchColumn() ?: 'superadmin@resipro.ph';
+                $superAdminEmail = $saStmt->fetchColumn() ?: 'superadmin@jldapartment.ph';
 
                 $checkCode = $pdo->prepare("SELECT id FROM password_resets WHERE email = ? AND code = ? AND expires_at >= NOW() ORDER BY id DESC LIMIT 1");
                 $checkCode->execute([$superAdminEmail, $adminCode]);
@@ -581,12 +581,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $ins = $pdo->prepare("INSERT INTO password_resets (email, code, expires_at) VALUES (?, ?, ?)");
             $ins->execute([$email, $otpCode, $expiresAt]);
 
-            $subject = "Your Verification Code: $otpCode - ResiPro Apartment Management";
+            $subject = "Your Verification Code: $otpCode - JLD Apartment Management";
             $message = "
             <html>
             <body style='font-family: Arial, sans-serif; background-color: #f8fafc; padding: 30px;'>
                 <div style='max-width: 500px; margin: 0 auto; background: #ffffff; padding: 25px; border-radius: 12px; border: 1px solid #e2e8f0;'>
-                    <h2 style='color: #2563eb; margin-top: 0;'>ResiPro Password Reset</h2>
+                    <h2 style='color: #2563eb; margin-top: 0;'>JLD Apartment Password Reset</h2>
                     <p>Hello <strong>" . htmlspecialchars($user['name']) . "</strong>,</p>
                     <p>We received a request to reset your password. Please use the 6-digit verification code below:</p>
                     <div style='background: #eff6ff; border: 2px dashed #2563eb; border-radius: 8px; padding: 18px; text-align: center; margin: 20px 0;'>
@@ -602,7 +602,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $user['name'],
                 $subject,
                 $message,
-                "Your ResiPro verification code is $otpCode. It expires in 15 minutes."
+                "Your JLD Apartment verification code is $otpCode. It expires in 15 minutes."
             );
 
             $_SESSION['pending_reset_email'] = $email;
@@ -747,7 +747,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 <div style='max-width: 500px; margin: 0 auto; background: #ffffff; padding: 25px; border-radius: 12px; border: 1px solid #e2e8f0;'>
                     <h2 style='color: #2563eb; margin-top: 0;'>Password Change Verification</h2>
                     <p>Hello <strong>" . htmlspecialchars($name) . "</strong>,</p>
-                    <p>We received a request to update your account password on <strong>ResiPro</strong>. Please use the 6-digit authentication code below to complete your password update:</p>
+                    <p>We received a request to update your account password on <strong>JLD Apartment</strong>. Please use the 6-digit authentication code below to complete your password update:</p>
                     <div style='background: #eff6ff; border: 2px dashed #2563eb; border-radius: 8px; padding: 18px; text-align: center; margin: 20px 0;'>
                         <span style='font-size: 32px; font-weight: bold; letter-spacing: 6px; color: #1d4ed8; font-family: monospace;'>$otpCode</span>
                     </div>
@@ -761,7 +761,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $name,
                 $subject,
                 $message,
-                "Your ResiPro password change authentication code is $otpCode. This code expires in 15 minutes."
+                "Your JLD Apartment password change authentication code is $otpCode. This code expires in 15 minutes."
             );
 
             logActivity('PASSWORD_OTP_REQUESTED', "Password change verification OTP requested by user ID #$userId ($email).");
@@ -783,37 +783,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if ($action === 'upload_avatar') {
         requireRole(['super_admin', 'admin', 'tenant']);
         $userId = intval($_SESSION['user_id'] ?? 0);
+        $isAjax = (!empty($_SERVER['HTTP_X_REQUESTED_WITH']) && strtolower($_SERVER['HTTP_X_REQUESTED_WITH']) === 'xmlhttprequest') || (isset($_POST['is_ajax']) && $_POST['is_ajax'] === '1');
 
-        if ($userId <= 0 || !isset($_FILES['avatar'])) {
-            setFlash('danger', 'Please select a profile picture to upload.');
-            redirect(BASE_URL . 'views/shared/profile.php');
-        }
-
-        $file = $_FILES['avatar'];
-        if ($file['error'] !== UPLOAD_ERR_OK) {
-            setFlash('danger', 'Profile picture upload failed. Please try again.');
-            redirect(BASE_URL . 'views/shared/profile.php');
-        }
-
-        if ($file['size'] > 2 * 1024 * 1024) {
-            setFlash('danger', 'Profile picture must be 2 MB or smaller.');
-            redirect(BASE_URL . 'views/shared/profile.php');
-        }
-
-        $imageInfo = @getimagesize($file['tmp_name']);
-        if ($imageInfo === false) {
-            setFlash('danger', 'Please upload a valid image file.');
-            redirect(BASE_URL . 'views/shared/profile.php');
-        }
-
-        $allowedMime = [
-            'image/jpeg' => 'jpg',
-            'image/png'  => 'png',
-            'image/webp' => 'webp'
-        ];
-        $mime = $imageInfo['mime'] ?? '';
-        if (!isset($allowedMime[$mime])) {
-            setFlash('danger', 'Only JPG, PNG, and WEBP profile pictures are allowed.');
+        if ($userId <= 0) {
+            if ($isAjax) {
+                header('Content-Type: application/json');
+                echo json_encode(['success' => false, 'message' => 'User not authenticated.']);
+                exit;
+            }
+            setFlash('danger', 'User not authenticated.');
             redirect(BASE_URL . 'views/shared/profile.php');
         }
 
@@ -822,8 +800,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $userStmt->execute([$userId]);
             $existing = $userStmt->fetch();
             if (!$existing) {
-                setFlash('danger', 'User account not found.');
-                redirect(BASE_URL . 'login.php');
+                throw new Exception('User account not found.');
             }
 
             $avatarDir = ROOT_PATH . 'assets' . DIRECTORY_SEPARATOR . 'uploads' . DIRECTORY_SEPARATOR . 'avatars' . DIRECTORY_SEPARATOR;
@@ -831,18 +808,64 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 throw new Exception('Unable to create the avatar upload directory.');
             }
 
-            $filename = 'avatar_' . $userId . '_' . bin2hex(random_bytes(8)) . '.' . $allowedMime[$mime];
-            $destination = $avatarDir . $filename;
-            $relativePath = 'assets/uploads/avatars/' . $filename;
+            $filename = '';
+            $destination = '';
+            $relativePath = '';
 
-            if (!move_uploaded_file($file['tmp_name'], $destination)) {
-                throw new Exception('Unable to save the uploaded profile picture.');
+            // Check if base64 cropped data was provided
+            if (!empty($_POST['cropped_image_data']) && preg_match('/^data:image\/(jpeg|png|webp);base64,/', $_POST['cropped_image_data'], $matches)) {
+                $ext = $matches[1] === 'jpeg' ? 'jpg' : $matches[1];
+                $base64Data = substr($_POST['cropped_image_data'], strpos($_POST['cropped_image_data'], ',') + 1);
+                $decoded = base64_decode($base64Data);
+
+                if ($decoded === false || strlen($decoded) > 3 * 1024 * 1024) {
+                    throw new Exception('Invalid cropped image data or image exceeds size limit.');
+                }
+
+                $filename = 'avatar_' . $userId . '_' . bin2hex(random_bytes(8)) . '.' . $ext;
+                $destination = $avatarDir . $filename;
+                $relativePath = 'assets/uploads/avatars/' . $filename;
+
+                if (file_put_contents($destination, $decoded) === false) {
+                    throw new Exception('Unable to save cropped image.');
+                }
+            } elseif (isset($_FILES['avatar']) && $_FILES['avatar']['error'] === UPLOAD_ERR_OK) {
+                $file = $_FILES['avatar'];
+                if ($file['size'] > 3 * 1024 * 1024) {
+                    throw new Exception('Profile picture must be 3 MB or smaller.');
+                }
+
+                $imageInfo = @getimagesize($file['tmp_name']);
+                if ($imageInfo === false) {
+                    throw new Exception('Please upload a valid image file.');
+                }
+
+                $allowedMime = [
+                    'image/jpeg' => 'jpg',
+                    'image/png'  => 'png',
+                    'image/webp' => 'webp'
+                ];
+                $mime = $imageInfo['mime'] ?? '';
+                if (!isset($allowedMime[$mime])) {
+                    throw new Exception('Only JPG, PNG, and WEBP profile pictures are allowed.');
+                }
+
+                $filename = 'avatar_' . $userId . '_' . bin2hex(random_bytes(8)) . '.' . $allowedMime[$mime];
+                $destination = $avatarDir . $filename;
+                $relativePath = 'assets/uploads/avatars/' . $filename;
+
+                if (!move_uploaded_file($file['tmp_name'], $destination)) {
+                    throw new Exception('Unable to save the uploaded profile picture.');
+                }
+            } else {
+                throw new Exception('Please select and crop a profile picture to upload.');
             }
 
             $update = $pdo->prepare("UPDATE users SET avatar = ? WHERE id = ?");
             $update->execute([$relativePath, $userId]);
             $_SESSION['user_avatar'] = $relativePath;
 
+            // Remove old uploaded avatar file if exists
             if (!empty($existing['avatar']) && strpos($existing['avatar'], 'assets/uploads/avatars/') === 0) {
                 $oldFile = ROOT_PATH . str_replace(['/', '\\'], DIRECTORY_SEPARATOR, $existing['avatar']);
                 if (is_file($oldFile) && $oldFile !== $destination) {
@@ -850,9 +873,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
             }
 
-            logActivity('AVATAR_UPDATED', 'Updated profile picture.');
-            setFlash('success', 'Your profile picture has been updated successfully.');
+            logActivity('AVATAR_UPDATED', 'Updated profile picture with crop/center adjustment.');
+
+            if ($isAjax) {
+                header('Content-Type: application/json');
+                echo json_encode([
+                    'success' => true, 
+                    'message' => 'Profile picture cropped and updated successfully.',
+                    'avatar_url' => BASE_URL . $relativePath
+                ]);
+                exit;
+            }
+
+            setFlash('success', 'Your profile picture has been adjusted and updated successfully.');
         } catch (Exception $e) {
+            if ($isAjax) {
+                header('Content-Type: application/json');
+                echo json_encode(['success' => false, 'message' => $e->getMessage()]);
+                exit;
+            }
             setFlash('danger', 'Unable to update profile picture: ' . $e->getMessage());
         }
 

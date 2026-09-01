@@ -41,8 +41,8 @@ $payStmt->execute([$invoiceId]);
 $payments = $payStmt->fetchAll();
 
 // System Settings
-$companyName = getSetting('system_name', 'ResiPro Apartment Management');
-$companyEmail = getSetting('company_email', 'management@resipro.ph');
+$companyName = getSetting('system_name', 'JLD Apartment Management');
+$companyEmail = getSetting('company_email', 'management@jldapartment.local');
 $companyPhone = getSetting('company_phone', '+63 917 555 8921');
 $companyAddress = getSetting('company_address', '108 Sampaguita St., Diliman, Quezon City');
 $gcashName = getSetting('payment_gcash_name', 'JUAN DELA CRUZ');
@@ -65,10 +65,7 @@ $gcashNum = getSetting('payment_gcash_number', '0917-555-8921');
 
 <div class="container">
     <!-- Top Action Bar (Hidden when printed) -->
-    <div class="d-flex justify-content-between align-items-center mb-4 no-print" style="max-width: 800px; margin: 0 auto;">
-        <a href="javascript:history.back()" class="btn btn-outline-secondary">
-            <i class="fas fa-arrow-left me-1"></i> Back
-        </a>
+    <div class="d-flex justify-content-end align-items-center mb-4 no-print" style="max-width: 800px; margin: 0 auto;">
         <button class="btn btn-primary" onclick="window.print()">
             <i class="fas fa-print me-1"></i> Print Statement / Official Receipt
         </button>

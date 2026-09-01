@@ -13,7 +13,7 @@ if (isLoggedIn()) {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Sign In - ResiPro Apartment Management</title>
+    <title>Sign In - JLD Apartment Management</title>
     
     <!-- Google Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -99,7 +99,7 @@ if (isLoggedIn()) {
         <div class="brand-badge">
             <i class="fas fa-building"></i>
         </div>
-        <h4 class="fw-bold text-dark mb-1">ResiPro Management</h4>
+        <h4 class="fw-bold text-dark mb-1">JLD Apartment</h4>
         <p class="text-muted small mb-0">Apartment & Rental Management System</p>
     </div>
 

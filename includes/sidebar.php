@@ -18,7 +18,7 @@ function isNavActive($page, $dir = '') {
             <i class="fas fa-building"></i>
         </div>
         <div>
-            <h6 class="brand-title">ResiPro</h6>
+            <h6 class="brand-title">JLD Apartment</h6>
             <p class="brand-subtitle">
                 <?php 
                 if ($role === 'super_admin') echo 'Super Admin Portal';

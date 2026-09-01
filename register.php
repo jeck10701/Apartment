@@ -11,9 +11,9 @@ if (isLoggedIn()) {
 $pdo = getDBConnection();
 // Fetch Super Admin email to display masked hint
 $saStmt = $pdo->query("SELECT email FROM users WHERE role = 'super_admin' LIMIT 1");
-$superAdminEmail = $saStmt->fetchColumn() ?: 'superadmin@resipro.ph';
+$superAdminEmail = $saStmt->fetchColumn() ?: 'superadmin@jldapartment.ph';
 
-// Mask Super Admin email (e.g. s***n@resipro.ph)
+// Mask Super Admin email (e.g. s***n@jldapartment.ph)
 $parts = explode('@', $superAdminEmail);
 $namePart = $parts[0];
 $domainPart = $parts[1] ?? '';
@@ -24,7 +24,7 @@ $maskedSuperAdmin = (strlen($namePart) > 2) ? substr($namePart, 0, 1) . str_repe
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Create Account - ResiPro Apartment Management</title>
+    <title>Create Account - JLD Apartment Management</title>
     
     <!-- Google Fonts & Bootstrap 5.3 -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -107,6 +107,18 @@ $maskedSuperAdmin = (strlen($namePart) > 2) ? substr($namePart, 0, 1) . str_repe
             padding: 1.15rem 2rem;
             text-align: center;
         }
+        .pass-toggle-btn {
+            background: #f8fafc;
+            border-color: #cbd5e1;
+            border-left: none;
+            color: #64748b;
+            border-top-right-radius: 10px !important;
+            border-bottom-right-radius: 10px !important;
+        }
+        .pass-toggle-btn:hover {
+            background: #f1f5f9;
+            color: #1e293b;
+        }
     </style>
 </head>
 <body>
@@ -114,10 +126,10 @@ $maskedSuperAdmin = (strlen($namePart) > 2) ? substr($namePart, 0, 1) . str_repe
 <div class="register-card">
     <div class="register-header">
         <div class="brand-badge">
-            <i class="fas fa-user-plus"></i>
+            <i class="fas fa-building"></i>
         </div>
         <h4 class="fw-bold text-dark mb-1">Create an Account</h4>
-        <p class="text-muted small mb-0">Join ResiPro Apartment Management</p>
+        <p class="text-muted small mb-0">Join JLD Apartment Management</p>
     </div>
 
     <div class="p-4 pt-0">
@@ -175,16 +187,17 @@ $maskedSuperAdmin = (strlen($namePart) > 2) ? substr($namePart, 0, 1) . str_repe
                     <label class="form-label small fw-semibold text-secondary">Username <span class="text-danger">*</span></label>
                     <div class="input-group">
                         <span class="input-group-text bg-light border-end-0 text-muted"><i class="fas fa-user"></i></span>
-                        <input type="text" name="username" class="form-control border-start-0 ps-0" placeholder="e.g. JeckDetera" required>
+                        <input type="text" name="username" id="regUsername" class="form-control border-start-0 ps-0" placeholder="e.g. MariaSantos" required>
                     </div>
                 </div>
                 <!-- Phone -->
                 <div class="col-md-6">
-                    <label class="form-label small fw-semibold text-secondary">Phone Number <span class="text-danger">*</span></label>
+                    <label class="form-label small fw-semibold text-secondary">Contact Number <span class="text-danger">*</span></label>
                     <div class="input-group">
                         <span class="input-group-text bg-light border-end-0 text-muted"><i class="fas fa-phone"></i></span>
-                        <input type="text" name="phone" class="form-control border-start-0 ps-0" placeholder="0917-XXX-XXXX" required>
+                        <input type="tel" name="phone" id="regPhone" class="form-control border-start-0 ps-0" placeholder="09171234567" maxlength="11" pattern="[0-9]{11}" oninput="this.value = this.value.replace(/[^0-9]/g, '').slice(0, 11);" onkeypress="return event.charCode >= 48 && event.charCode <= 57" required>
                     </div>
+                    <small class="text-muted" style="font-size: 0.74rem;">Max 11 digits (e.g. 09171234567, numbers only)</small>
                 </div>
             </div>
 
@@ -197,13 +210,16 @@ $maskedSuperAdmin = (strlen($namePart) > 2) ? substr($namePart, 0, 1) . str_repe
                 </div>
             </div>
 
-            <div class="row g-2 mb-4">
+            <div class="row g-2 mb-2">
                 <!-- Password -->
                 <div class="col-md-6">
                     <label class="form-label small fw-semibold text-secondary">Password <span class="text-danger">*</span></label>
                     <div class="input-group">
                         <span class="input-group-text bg-light border-end-0 text-muted"><i class="fas fa-lock"></i></span>
-                        <input type="password" name="password" id="regPassword" class="form-control border-start-0 ps-0" placeholder="Min. 6 chars" minlength="6" required>
+                        <input type="password" name="password" id="regPassword" class="form-control border-start-0 border-end-0 ps-0" placeholder="Min. 6 chars" minlength="6" required oninput="checkPasswordStrength(this.value)">
+                        <button class="btn btn-light pass-toggle-btn border" type="button" onclick="togglePasswordVisibility('regPassword', 'toggleRegPassIcon')" title="Show/Hide Password">
+                            <i class="fas fa-eye" id="toggleRegPassIcon"></i>
+                        </button>
                     </div>
                 </div>
                 <!-- Confirm Password -->
@@ -211,12 +227,32 @@ $maskedSuperAdmin = (strlen($namePart) > 2) ? substr($namePart, 0, 1) . str_repe
                     <label class="form-label small fw-semibold text-secondary">Confirm Password <span class="text-danger">*</span></label>
                     <div class="input-group">
                         <span class="input-group-text bg-light border-end-0 text-muted"><i class="fas fa-lock-open"></i></span>
-                        <input type="password" name="confirm_password" id="regConfirmPassword" class="form-control border-start-0 ps-0" placeholder="Repeat password" minlength="6" required>
+                        <input type="password" name="confirm_password" id="regConfirmPassword" class="form-control border-start-0 border-end-0 ps-0" placeholder="Repeat password" minlength="6" required>
+                        <button class="btn btn-light pass-toggle-btn border" type="button" onclick="togglePasswordVisibility('regConfirmPassword', 'toggleRegConfirmPassIcon')" title="Show/Hide Password">
+                            <i class="fas fa-eye" id="toggleRegConfirmPassIcon"></i>
+                        </button>
                     </div>
                 </div>
             </div>
 
-            <button type="submit" id="btnSubmitRegister" class="btn btn-register w-100 mb-2">
+            <!-- Password Strength Meter -->
+            <div id="passwordStrengthWrapper" class="p-2 mb-3 rounded bg-light border" style="display: none;">
+                <div class="d-flex justify-content-between align-items-center mb-1">
+                    <span class="small fw-semibold text-secondary" style="font-size: 0.78rem;">Password Strength:</span>
+                    <span id="strengthLabel" class="badge bg-secondary" style="font-size: 0.72rem;">Too Short</span>
+                </div>
+                <div class="progress mb-2" style="height: 6px; border-radius: 4px; background-color: #e2e8f0;">
+                    <div id="strengthProgressBar" class="progress-bar" role="progressbar" style="width: 0%; transition: width 0.3s ease, background-color 0.3s ease;"></div>
+                </div>
+                <div id="strengthHint" class="d-flex flex-wrap gap-2 small text-muted" style="font-size: 0.73rem;">
+                    <span id="reqLength" class="text-danger"><i class="fas fa-times-circle me-1"></i>Min 6 chars</span>
+                    <span id="reqUpper" class="text-danger"><i class="fas fa-times-circle me-1"></i>Uppercase (A-Z)</span>
+                    <span id="reqNumber" class="text-danger"><i class="fas fa-times-circle me-1"></i>Number (0-9)</span>
+                    <span id="reqSpecial" class="text-danger"><i class="fas fa-times-circle me-1"></i>Special Symbol</span>
+                </div>
+            </div>
+
+            <button type="submit" id="btnSubmitRegister" class="btn btn-register w-100 mb-2 mt-2">
                 <i class="fas fa-check-circle me-2"></i><span id="btnSubmitText">Complete Registration</span>
             </button>
         </form>
@@ -315,19 +351,111 @@ function requestSuperAdminCode() {
     });
 }
 
+function togglePasswordVisibility(inputId, iconId) {
+    const input = document.getElementById(inputId);
+    const icon = document.getElementById(iconId);
+    if (!input || !icon) return;
+
+    if (input.type === 'password') {
+        input.type = 'text';
+        icon.classList.remove('fa-eye');
+        icon.classList.add('fa-eye-slash');
+    } else {
+        input.type = 'password';
+        icon.classList.remove('fa-eye-slash');
+        icon.classList.add('fa-eye');
+    }
+}
+
+function checkPasswordStrength(pass) {
+    const wrapper = document.getElementById('passwordStrengthWrapper');
+    const bar = document.getElementById('strengthProgressBar');
+    const label = document.getElementById('strengthLabel');
+    
+    if (!pass) {
+        wrapper.style.display = 'none';
+        return;
+    }
+    
+    wrapper.style.display = 'block';
+
+    const hasLength = pass.length >= 6;
+    const hasUpper = /[A-Z]/.test(pass);
+    const hasLower = /[a-z]/.test(pass);
+    const hasNumber = /[0-9]/.test(pass);
+    const hasSpecial = /[^A-Za-z0-9]/.test(pass);
+
+    // Update requirements checklist icons
+    updateReqIndicator('reqLength', hasLength, 'Min 6 chars');
+    updateReqIndicator('reqUpper', hasUpper, 'Uppercase (A-Z)');
+    updateReqIndicator('reqNumber', hasNumber, 'Number (0-9)');
+    updateReqIndicator('reqSpecial', hasSpecial, 'Special Symbol');
+
+    let score = 0;
+    if (hasLength) score++;
+    if (hasUpper && hasLower) score++;
+    if (hasNumber) score++;
+    if (hasSpecial) score++;
+    if (pass.length >= 10 && score >= 3) score++;
+
+    if (score <= 1) {
+        bar.style.width = '25%';
+        bar.className = 'progress-bar bg-danger';
+        label.className = 'badge bg-danger';
+        label.textContent = 'Weak';
+    } else if (score === 2) {
+        bar.style.width = '50%';
+        bar.className = 'progress-bar bg-warning';
+        label.className = 'badge bg-warning text-dark';
+        label.textContent = 'Fair';
+    } else if (score === 3) {
+        bar.style.width = '75%';
+        bar.className = 'progress-bar bg-info';
+        label.className = 'badge bg-info text-dark';
+        label.textContent = 'Good';
+    } else {
+        bar.style.width = '100%';
+        bar.className = 'progress-bar bg-success';
+        label.className = 'badge bg-success';
+        label.textContent = 'Strong';
+    }
+}
+
+function updateReqIndicator(elementId, isValid, label) {
+    const el = document.getElementById(elementId);
+    if (!el) return;
+    if (isValid) {
+        el.className = 'text-success';
+        el.innerHTML = '<i class="fas fa-check-circle me-1"></i>' + label;
+    } else {
+        el.className = 'text-danger';
+        el.innerHTML = '<i class="fas fa-times-circle me-1"></i>' + label;
+    }
+}
+
 function validateRegistrationForm() {
+    const phone = document.getElementById('regPhone').value.trim();
     const pass = document.getElementById('regPassword').value;
     const confirm = document.getElementById('regConfirmPassword').value;
     const role = document.getElementById('roleSelect').value;
     const adminCode = document.getElementById('adminCodeInput').value.trim();
 
+    // Validate phone number: exactly 11 digits, numbers only
+    if (!/^\d{11}$/.test(phone)) {
+        alert('Contact Number must be exactly 11 digits without letters (e.g. 09171234567).');
+        document.getElementById('regPhone').focus();
+        return false;
+    }
+
     if (pass !== confirm) {
         alert('Passwords do not match! Please check and try again.');
+        document.getElementById('regConfirmPassword').focus();
         return false;
     }
 
     if (pass.length < 6) {
         alert('Password must be at least 6 characters in length.');
+        document.getElementById('regPassword').focus();
         return false;
     }
 

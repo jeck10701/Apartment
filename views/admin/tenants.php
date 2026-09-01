@@ -17,15 +17,26 @@ $tenants = $pdo->query("SELECT t.*, u.unit_number, u.unit_type, u.monthly_rent, 
 // Fetch vacant units available for assignment
 $vacantUnits = $pdo->query("SELECT id, unit_number, unit_type, monthly_rent, security_deposit FROM units WHERE status = 'vacant' ORDER BY unit_number ASC")->fetchAll();
 
+// Fetch unique tenant profiles for the Assign Unit modal dropdown
+$uniqueTenants = $pdo->query("SELECT MIN(id) as id, user_id, first_name, last_name, phone, email 
+    FROM tenants 
+    WHERE status = 'active' 
+    GROUP BY COALESCE(user_id, id), first_name, last_name, phone, email 
+    ORDER BY first_name ASC")->fetchAll();
+
 include_once dirname(dirname(__DIR__)) . '/includes/header.php';
 ?>
 
 <div class="d-md-flex align-items-center justify-content-between mb-4">
     <div>
         <h1 class="page-title">Tenants Masterlist</h1>
-        <p class="page-subtitle">Track tenant accounts, unit assignments, lease contracts, and portal logins. New tenant accounts appear here automatically.</p>
+        <p class="page-subtitle">Track tenant accounts, unit assignments, lease contracts, and portal logins. Support assigning multiple units per tenant.</p>
     </div>
-
+    <div class="mt-3 mt-md-0 d-flex gap-2">
+        <button class="btn btn-primary" onclick="openAddUnitModal()">
+            <i class="fas fa-plus-circle me-1"></i> Assign / Add Unit to Tenant
+        </button>
+    </div>
 </div>
 
 <!-- Search & Status Summary -->
@@ -101,26 +112,109 @@ include_once dirname(dirname(__DIR__)) . '/includes/header.php';
                                 <div>Dep: <?php echo formatPeso($t['deposit_paid']); ?></div>
                                 <div class="text-muted">Adv: <?php echo formatPeso($t['advance_paid']); ?></div>
                             </td>
-                                                        <td class="text-end">
-                                <button class="btn btn-sm btn-outline-secondary me-1" 
-                                        onclick="openEditTenantModal(<?php echo htmlspecialchars(json_encode($t)); ?>)" 
-                                        title="Edit Tenant Information">
-                                    <i class="fas fa-edit"></i>
-                                </button>
-                                <?php if ($t['status'] === 'active'): ?>
-                                    <form action="<?php echo BASE_URL; ?>controllers/TenantController.php?action=move_out" method="POST" class="d-inline" onsubmit="return confirm('Process Move-Out for <?php echo htmlspecialchars($t['first_name'] . ' ' . $t['last_name']); ?>? This will vacate Unit <?php echo $t['unit_number']; ?>.');">
-                                        <input type="hidden" name="tenant_id" value="<?php echo $t['id']; ?>">
-                                        <button type="submit" class="btn btn-sm btn-outline-warning" title="Process Move-Out (Checkout)">
-                                            <i class="fas fa-sign-out-alt"></i>
-                                        </button>
-                                    </form>
-                                <?php endif; ?>
-                            </td>
+                                <td class="text-end text-nowrap">
+                                    <button class="btn btn-sm btn-outline-primary me-1" 
+                                            onclick="openAddUnitModal(<?php echo htmlspecialchars(json_encode($t)); ?>)" 
+                                            title="Assign / Add Another Unit to this Tenant">
+                                        <i class="fas fa-plus-circle me-1"></i>Add Unit
+                                    </button>
+                                    <button class="btn btn-sm btn-outline-secondary me-1" 
+                                            onclick="openEditTenantModal(<?php echo htmlspecialchars(json_encode($t)); ?>)" 
+                                            title="Edit Tenant Information">
+                                        <i class="fas fa-edit"></i>
+                                    </button>
+                                    <?php if ($t['status'] === 'active' && !empty($t['unit_id'])): ?>
+                                        <form action="<?php echo BASE_URL; ?>controllers/TenantController.php?action=move_out" method="POST" class="d-inline" onsubmit="return confirm('Process Move-Out for <?php echo htmlspecialchars($t['first_name'] . ' ' . $t['last_name']); ?>? This will vacate Unit <?php echo $t['unit_number']; ?>.');">
+                                            <input type="hidden" name="tenant_id" value="<?php echo $t['id']; ?>">
+                                            <button type="submit" class="btn btn-sm btn-outline-warning" title="Process Move-Out (Checkout)">
+                                                <i class="fas fa-sign-out-alt"></i>
+                                            </button>
+                                        </form>
+                                    <?php endif; ?>
+                                </td>
                         </tr>
                     <?php endforeach; ?>
                 <?php endif; ?>
             </tbody>
         </table>
+    </div>
+</div>
+
+<!-- Modal: Assign / Add Unit to Tenant -->
+<div class="modal fade" id="addUnitToTenantModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-lg">
+        <div class="modal-content border-0 shadow-lg" style="border-radius: 14px;">
+            <div class="modal-header border-bottom">
+                <h5 class="modal-title fw-bold text-dark"><i class="fas fa-door-open text-primary me-2"></i>Assign / Add Unit to Tenant</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <form action="<?php echo BASE_URL; ?>controllers/TenantController.php?action=add_unit" method="POST">
+                <div class="modal-body p-4">
+                    <div class="alert alert-info small d-flex align-items-center gap-2 mb-3">
+                        <i class="fas fa-info-circle fs-5"></i>
+                        <div>
+                            Assigning an additional unit allows a single tenant to rent <strong>2, 3, or more units</strong> under their same account profile and portal login.
+                        </div>
+                    </div>
+
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <label class="form-label small fw-semibold">Select Tenant <span class="text-danger">*</span></label>
+                            <select name="tenant_id" id="add_unit_tenant_id" class="form-select" required>
+                                <option value="">-- Choose Tenant --</option>
+                                <?php foreach ($uniqueTenants as $ut): ?>
+                                    <option value="<?php echo $ut['id']; ?>">
+                                        <?php echo htmlspecialchars($ut['first_name'] . ' ' . $ut['last_name'] . ' (' . $ut['phone'] . ')'); ?>
+                                    </option>
+                                <?php endforeach; ?>
+                            </select>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label small fw-semibold">Select Vacant Unit to Assign <span class="text-danger">*</span></label>
+                            <select name="unit_id" id="add_unit_unit_id" class="form-select" required onchange="updateAddUnitRentAutoFill(this)">
+                                <option value="">-- Choose Vacant Unit --</option>
+                                <?php foreach ($vacantUnits as $vu): ?>
+                                    <option value="<?php echo $vu['id']; ?>" data-rent="<?php echo $vu['monthly_rent']; ?>" data-deposit="<?php echo $vu['security_deposit']; ?>">
+                                        <?php echo htmlspecialchars($vu['unit_number']); ?> (<?php echo htmlspecialchars($vu['unit_type']); ?> - <?php echo formatPeso($vu['monthly_rent']); ?>/mo)
+                                    </option>
+                                <?php endforeach; ?>
+                            </select>
+                        </div>
+
+                        <div class="col-md-4">
+                            <label class="form-label small fw-semibold">Lease Start Date <span class="text-danger">*</span></label>
+                            <input type="date" name="lease_start" id="add_unit_lease_start" class="form-control" value="<?php echo date('Y-m-d'); ?>" required>
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label small fw-semibold">Lease End Date <span class="text-danger">*</span></label>
+                            <input type="date" name="lease_end" id="add_unit_lease_end" class="form-control" value="<?php echo date('Y-m-d', strtotime('+1 year')); ?>" required>
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label small fw-semibold">Monthly Due Day (1-31) <span class="text-danger">*</span></label>
+                            <input type="number" name="rent_due_day" id="add_unit_rent_due_day" class="form-control" min="1" max="31" value="5" required>
+                        </div>
+
+                        <div class="col-md-6">
+                            <label class="form-label small fw-semibold">Security Deposit Paid (₱)</label>
+                            <input type="number" step="0.01" name="deposit_paid" id="add_unit_deposit_paid" class="form-control" placeholder="0.00">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label small fw-semibold">Advance Rent Paid (₱)</label>
+                            <input type="number" step="0.01" name="advance_paid" id="add_unit_advance_paid" class="form-control" placeholder="0.00">
+                        </div>
+
+                        <div class="col-12">
+                            <label class="form-label small fw-semibold">Notes / Contract Details</label>
+                            <textarea name="notes" id="add_unit_notes" class="form-control" rows="2" placeholder="Additional unit assignment remarks..."></textarea>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer border-top bg-light">
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary"><i class="fas fa-check-circle me-1"></i> Confirm Unit Assignment</button>
+                </div>
+            </form>
+        </div>
     </div>
 </div>
 
@@ -213,13 +307,23 @@ include_once dirname(dirname(__DIR__)) . '/includes/header.php';
 </div>
 
 <script>
-function updateRentAutoFill(select) {
+function updateAddUnitRentAutoFill(select) {
     const selectedOption = select.options[select.selectedIndex];
     const rent = selectedOption.getAttribute('data-rent') || '';
     const deposit = selectedOption.getAttribute('data-deposit') || rent;
     
-    document.getElementById('deposit_paid_input').value = deposit;
-    document.getElementById('advance_paid_input').value = rent;
+    document.getElementById('add_unit_deposit_paid').value = deposit;
+    document.getElementById('add_unit_advance_paid').value = rent;
+}
+
+function openAddUnitModal(tenant = null) {
+    const tenantSelect = document.getElementById('add_unit_tenant_id');
+    if (tenant && tenant.id) {
+        tenantSelect.value = tenant.id;
+    } else {
+        tenantSelect.value = '';
+    }
+    new bootstrap.Modal(document.getElementById('addUnitToTenantModal')).show();
 }
 
 function openEditTenantModal(tenant) {

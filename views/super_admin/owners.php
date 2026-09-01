@@ -54,7 +54,7 @@ include_once dirname(dirname(__DIR__)) . '/includes/header.php';
     <div class="p-3 p-md-4 border-bottom d-flex align-items-center justify-content-between">
         <div>
             <h5 class="custom-card-title mb-1"><i class="fas fa-user-tie text-primary me-2"></i>Property Owner / Admin Accounts</h5>
-            <p class="text-muted small mb-0">Landlord accounts registered in ResiPro.</p>
+            <p class="text-muted small mb-0">Landlord accounts registered in JLD Apartment.</p>
         </div>
         <span class="badge bg-primary-subtle text-primary border border-primary-subtle rounded-pill">
             <?php echo count($owners); ?> account<?php echo count($owners) === 1 ? '' : 's'; ?>

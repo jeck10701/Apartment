@@ -69,6 +69,88 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         redirect(BASE_URL . 'views/admin/tenants.php');
     }
 
+    if ($action === 'add_unit') {
+        $sourceTenantId = intval($_POST['tenant_id'] ?? 0);
+        $unitId         = intval($_POST['unit_id'] ?? 0);
+        $leaseStart     = $_POST['lease_start'] ?? date('Y-m-d');
+        $leaseEnd       = $_POST['lease_end'] ?? date('Y-m-d', strtotime('+1 year'));
+        $rentDueDay     = intval($_POST['rent_due_day'] ?? 5);
+        $depositPaid    = floatval($_POST['deposit_paid'] ?? 0);
+        $advancePaid    = floatval($_POST['advance_paid'] ?? 0);
+        $notes          = trim($_POST['notes'] ?? 'Additional unit assigned to existing tenant.');
+
+        if ($sourceTenantId <= 0 || $unitId <= 0) {
+            setFlash('danger', 'Please select a valid tenant and a vacant unit.');
+            redirect(BASE_URL . 'views/admin/tenants.php');
+        }
+
+        try {
+            $pdo->beginTransaction();
+
+            $srcStmt = $pdo->prepare("SELECT * FROM tenants WHERE id = ? LIMIT 1");
+            $srcStmt->execute([$sourceTenantId]);
+            $srcTenant = $srcStmt->fetch(PDO::FETCH_ASSOC);
+
+            if (!$srcTenant) {
+                throw new Exception('Selected tenant profile not found.');
+            }
+
+            $uStmt = $pdo->prepare("SELECT * FROM units WHERE id = ? LIMIT 1");
+            $uStmt->execute([$unitId]);
+            $unit = $uStmt->fetch(PDO::FETCH_ASSOC);
+
+            if (!$unit) {
+                throw new Exception('Selected unit was not found.');
+            }
+
+            if ($unit['status'] !== 'vacant') {
+                throw new Exception("Unit {$unit['unit_number']} is currently {$unit['status']}. Only vacant units can be assigned.");
+            }
+
+            // If the source tenant currently has NO unit assigned, update that record directly
+            if (empty($srcTenant['unit_id'])) {
+                $updStmt = $pdo->prepare("UPDATE tenants SET unit_id = ?, lease_start = ?, lease_end = ?, rent_due_day = ?, deposit_paid = ?, advance_paid = ?, notes = ?, status = 'active' WHERE id = ?");
+                $updStmt->execute([$unitId, $leaseStart, $leaseEnd, $rentDueDay, $depositPaid, $advancePaid, $notes, $sourceTenantId]);
+            } else {
+                // Otherwise, insert an additional tenant-unit lease record with the same user_id & profile details
+                $insStmt = $pdo->prepare("INSERT INTO tenants (user_id, unit_id, first_name, last_name, email, phone, emergency_contact_name, emergency_contact_phone, id_type, id_number, lease_start, lease_end, rent_due_day, deposit_paid, advance_paid, status, notes) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?)");
+                $insStmt->execute([
+                    $srcTenant['user_id'],
+                    $unitId,
+                    $srcTenant['first_name'],
+                    $srcTenant['last_name'],
+                    $srcTenant['email'],
+                    $srcTenant['phone'],
+                    $srcTenant['emergency_contact_name'],
+                    $srcTenant['emergency_contact_phone'],
+                    $srcTenant['id_type'],
+                    $srcTenant['id_number'],
+                    $leaseStart,
+                    $leaseEnd,
+                    $rentDueDay,
+                    $depositPaid,
+                    $advancePaid,
+                    $notes
+                ]);
+            }
+
+            $occStmt = $pdo->prepare("UPDATE units SET status = 'occupied' WHERE id = ?");
+            $occStmt->execute([$unitId]);
+
+            $pdo->commit();
+
+            logActivity('TENANT_UNIT_ADDED', "Assigned Unit {$unit['unit_number']} to tenant {$srcTenant['first_name']} {$srcTenant['last_name']}.");
+            setFlash('success', "Unit {$unit['unit_number']} was successfully assigned to {$srcTenant['first_name']} {$srcTenant['last_name']}!");
+        } catch (Exception $e) {
+            if ($pdo->inTransaction()) {
+                $pdo->rollBack();
+            }
+            setFlash('danger', 'Error assigning unit: ' . $e->getMessage());
+        }
+
+        redirect(BASE_URL . 'views/admin/tenants.php');
+    }
+
     if ($action === 'edit') {
         $tenantId     = intval($_POST['tenant_id'] ?? 0);
         $unitId       = ($_POST['unit_id'] ?? '') !== '' ? intval($_POST['unit_id']) : null;
