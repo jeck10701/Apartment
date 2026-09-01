@@ -1116,14 +1116,6 @@ btnSaveCroppedAvatar.addEventListener('click', function() {
         cropAlertFeedback.style.display = 'block';
     });
 });
-    .catch(err => {
-        btnSaveCroppedAvatar.disabled = false;
-        btnSaveCroppedAvatar.innerHTML = originalBtnHtml;
-        cropAlertFeedback.className = 'alert alert-danger small mt-3';
-        cropAlertFeedback.innerHTML = '<i class="fas fa-times-circle me-1"></i> Network error. Please try again.';
-        cropAlertFeedback.style.display = 'block';
-    });
-});
 
 // ==========================================
 // OTP SENDER & SECURITY FORM VALIDATION
