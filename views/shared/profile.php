@@ -877,11 +877,11 @@ function checkSecPasswordStrength(password) {
 }
 
 // ==========================================
+// ==========================================
 // CROPPER.JS PROFILE PICTURE LOGIC
 // ==========================================
 let cropperInstance = null;
 const cropModalEl = document.getElementById('cropAvatarModal');
-const cropModal = cropModalEl ? new bootstrap.Modal(cropModalEl) : null;
 const cropperImageSource = document.getElementById('cropperImageSource');
 const avatarFileInput = document.getElementById('avatarFileInput');
 const btnSaveCroppedAvatar = document.getElementById('btnSaveCroppedAvatar');
@@ -896,15 +896,44 @@ function openAvatarFilePicker() {
     }
 }
 
+function showCropModal() {
+    if (!cropModalEl) return;
+    if (typeof bootstrap !== 'undefined' && bootstrap.Modal) {
+        const modal = bootstrap.Modal.getInstance(cropModalEl) || new bootstrap.Modal(cropModalEl);
+        modal.show();
+    } else {
+        cropModalEl.classList.add('show');
+        cropModalEl.style.display = 'block';
+        document.body.classList.add('modal-open');
+    }
+}
+
+function hideCropModal() {
+    if (!cropModalEl) return;
+    if (typeof bootstrap !== 'undefined' && bootstrap.Modal) {
+        const modal = bootstrap.Modal.getInstance(cropModalEl);
+        if (modal) modal.hide();
+    } else {
+        cropModalEl.classList.remove('show');
+        cropModalEl.style.display = 'none';
+        document.body.classList.remove('modal-open');
+    }
+}
+
 function initCropper() {
+    if (typeof Cropper === 'undefined') {
+        console.warn('Cropper.js not loaded, skipping cropper init.');
+        return;
+    }
     if (cropperInstance) {
         cropperInstance.destroy();
+        cropperInstance = null;
     }
     cropperInstance = new Cropper(cropperImageSource, {
         aspectRatio: 1,
         viewMode: 1,
         dragMode: 'move',
-        autoCropArea: 0.9,
+        autoCropArea: 0.95,
         restore: false,
         guides: true,
         center: true,
@@ -916,7 +945,7 @@ function initCropper() {
     });
 }
 
-// When a file is chosen from OS File Explorer, load it into Cropper and immediately show modal
+// When a file is chosen from OS File Explorer, show immediate preview in profile circle & pop up modal
 avatarFileInput.addEventListener('change', function() {
     const file = this.files?.[0];
     if (!file) return;
@@ -939,20 +968,33 @@ avatarFileInput.addEventListener('change', function() {
 
     const reader = new FileReader();
     reader.onload = function(e) {
+        const imageDataUrl = e.target.result;
         cropAlertFeedback.style.display = 'none';
-        
+
+        // 1. Instant pop-up update in the main circle avatar on the page
+        const mainImg = document.getElementById('mainAvatarDisplay');
+        const fallback = document.getElementById('mainAvatarFallback');
+        if (mainImg) {
+            mainImg.src = imageDataUrl;
+        } else if (fallback) {
+            fallback.outerHTML = '<img src="' + imageDataUrl + '" alt="Profile Picture" id="mainAvatarDisplay" class="profile-avatar-img">';
+        }
+
+        // 2. Set cropper modal image source
         if (cropperInstance) {
             cropperInstance.destroy();
             cropperInstance = null;
         }
+        cropperImageSource.src = imageDataUrl;
 
-        cropperImageSource.src = e.target.result;
-        
-        if (cropModalEl && cropModalEl.classList.contains('show')) {
-            initCropper();
-        } else {
-            cropModal.show();
-        }
+        // 3. Pop up the Cropper Modal so user can center and crop
+        showCropModal();
+
+        // 4. Initialize cropper once image is ready
+        cropperImageSource.onload = function() {
+            setTimeout(initCropper, 150);
+        };
+        setTimeout(initCropper, 200);
     };
     reader.onerror = function() {
         alert('Failed to read image file from disk.');
@@ -984,30 +1026,38 @@ document.getElementById('btnResetCrop')?.addEventListener('click', () => cropper
 
 // Save Cropped Avatar via AJAX
 btnSaveCroppedAvatar.addEventListener('click', function() {
-    if (!cropperInstance) return;
-
     const originalBtnHtml = btnSaveCroppedAvatar.innerHTML;
     btnSaveCroppedAvatar.disabled = true;
     btnSaveCroppedAvatar.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i> Saving...';
 
     cropAlertFeedback.style.display = 'none';
 
-    // Get 600x600 cropped canvas
-    const canvas = cropperInstance.getCroppedCanvas({
-        width: 600,
-        height: 600,
-        imageSmoothingEnabled: true,
-        imageSmoothingQuality: 'high'
-    });
+    let base64Image = '';
 
-    if (!canvas) {
-        alert('Could not process the cropped image.');
+    if (cropperInstance) {
+        const canvas = cropperInstance.getCroppedCanvas({
+            width: 600,
+            height: 600,
+            imageSmoothingEnabled: true,
+            imageSmoothingQuality: 'high'
+        });
+
+        if (canvas) {
+            base64Image = canvas.toDataURL('image/jpeg', 0.92);
+        }
+    }
+
+    // If cropper canvas wasn't available, fallback to image source
+    if (!base64Image) {
+        base64Image = cropperImageSource.src;
+    }
+
+    if (!base64Image) {
+        alert('Could not process the image.');
         btnSaveCroppedAvatar.disabled = false;
         btnSaveCroppedAvatar.innerHTML = originalBtnHtml;
         return;
     }
-
-    const base64Image = canvas.toDataURL('image/jpeg', 0.9);
 
     const formData = new FormData();
     formData.append('is_ajax', '1');
@@ -1050,14 +1100,22 @@ btnSaveCroppedAvatar.addEventListener('click', function() {
             }
 
             setTimeout(() => {
-                cropModal.hide();
-            }, 800);
+                hideCropModal();
+            }, 600);
         } else {
             cropAlertFeedback.className = 'alert alert-danger small mt-3';
             cropAlertFeedback.innerHTML = '<i class="fas fa-exclamation-triangle me-1"></i> ' + data.message;
             cropAlertFeedback.style.display = 'block';
         }
     })
+    .catch(err => {
+        btnSaveCroppedAvatar.disabled = false;
+        btnSaveCroppedAvatar.innerHTML = originalBtnHtml;
+        cropAlertFeedback.className = 'alert alert-danger small mt-3';
+        cropAlertFeedback.innerHTML = '<i class="fas fa-times-circle me-1"></i> Network error. Please try again.';
+        cropAlertFeedback.style.display = 'block';
+    });
+});
     .catch(err => {
         btnSaveCroppedAvatar.disabled = false;
         btnSaveCroppedAvatar.innerHTML = originalBtnHtml;
