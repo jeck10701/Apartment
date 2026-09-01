@@ -76,58 +76,40 @@ include_once dirname(dirname(__DIR__)) . '/includes/header.php';
 <style>
 .profile-avatar-container {
     position: relative;
-    width: 120px;
-    height: 120px;
+    width: 110px;
+    height: 110px;
     margin: 0 auto;
     border-radius: 50%;
     cursor: pointer;
 }
 .profile-avatar-img {
-    width: 120px;
-    height: 120px;
+    width: 110px;
+    height: 110px;
     border-radius: 50%;
     object-fit: cover;
-    border: 4px solid #fff;
-    box-shadow: 0 4px 14px rgba(0,0,0,0.12);
+    border: 3px solid #e2e8f0;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.08);
     transition: transform 0.2s ease, filter 0.2s ease;
 }
 .profile-avatar-fallback {
-    width: 120px;
-    height: 120px;
+    width: 110px;
+    height: 110px;
     border-radius: 50%;
     background: linear-gradient(135deg, var(--primary-color, #2563eb), #1d4ed8);
     color: #fff;
-    font-size: 2.75rem;
+    font-size: 2.5rem;
     font-weight: 700;
     display: flex;
     align-items: center;
     justify-content: center;
-    border: 4px solid #fff;
-    box-shadow: 0 4px 14px rgba(0,0,0,0.12);
+    border: 3px solid #e2e8f0;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+    transition: transform 0.2s ease, filter 0.2s ease;
 }
-.profile-avatar-overlay {
-    position: absolute;
-    bottom: 0;
-    right: 0;
-    width: 38px;
-    height: 38px;
-    background: var(--primary-color, #2563eb);
-    color: #fff;
-    border-radius: 50%;
-    border: 3px solid #fff;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 0.95rem;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.18);
-    transition: transform 0.2s ease, background-color 0.2s ease;
-}
-.profile-avatar-container:hover .profile-avatar-img {
+.profile-avatar-container:hover .profile-avatar-img,
+.profile-avatar-container:hover .profile-avatar-fallback {
     filter: brightness(0.92);
-}
-.profile-avatar-container:hover .profile-avatar-overlay {
-    transform: scale(1.1);
-    background: #1d4ed8;
+    transform: scale(1.02);
 }
 .info-field-card {
     background: #f8fafc;
@@ -179,11 +161,6 @@ include_once dirname(dirname(__DIR__)) . '/includes/header.php';
         <h1 class="page-title">My Account Profile & Settings</h1>
         <p class="page-subtitle">View your complete account information, adjust & center your profile picture, or manage your login security.</p>
     </div>
-    <div class="mt-3 mt-md-0 d-flex gap-2">
-        <button type="button" class="btn btn-primary shadow-sm" onclick="openAvatarCropModal()">
-            <i class="fas fa-crop-alt me-1"></i> Edit / Center Profile Picture
-        </button>
-    </div>
 </div>
 
 <!-- Main Top Profile Banner -->
@@ -191,7 +168,7 @@ include_once dirname(dirname(__DIR__)) . '/includes/header.php';
     <div class="p-4 bg-light border-bottom">
         <div class="row align-items-center g-4">
             <div class="col-12 col-md-auto text-center">
-                <div class="profile-avatar-container" onclick="openAvatarCropModal()" title="Click to Edit & Center Profile Picture">
+                <div class="profile-avatar-container" onclick="triggerAvatarFileInput()" title="Click to choose a photo and center/crop">
                     <?php if (!empty($user['avatar'])): ?>
                         <img src="<?php echo BASE_URL . htmlspecialchars($user['avatar']); ?>" alt="Profile Picture" id="mainAvatarDisplay" class="profile-avatar-img">
                     <?php else: ?>
@@ -199,13 +176,7 @@ include_once dirname(dirname(__DIR__)) . '/includes/header.php';
                             <?php echo strtoupper(substr($user['name'], 0, 1)); ?>
                         </div>
                     <?php endif; ?>
-                    <div class="profile-avatar-overlay">
-                        <i class="fas fa-camera"></i>
-                    </div>
                 </div>
-                <button type="button" class="btn btn-link btn-sm text-decoration-none mt-1 p-0 fw-semibold" onclick="openAvatarCropModal()">
-                    <small><i class="fas fa-arrows-alt me-1"></i>Edit / Center</small>
-                </button>
             </div>
             <div class="col-12 col-md text-center text-md-start">
                 <div class="d-flex flex-wrap align-items-center justify-content-center justify-content-md-start gap-2 mb-1">
@@ -244,6 +215,13 @@ include_once dirname(dirname(__DIR__)) . '/includes/header.php';
                         <i class="fas fa-calendar-check me-1"></i> Member Since <?php echo formatDate($user['created_at'], 'F Y'); ?>
                     </span>
                 </div>
+            </div>
+
+            <!-- Edit / Center Profile Picture Action Button placed above tabs / on banner -->
+            <div class="col-12 col-md-auto text-center text-md-end">
+                <button type="button" class="btn btn-primary px-3 py-2 shadow-sm" onclick="triggerAvatarFileInput()">
+                    <i class="fas fa-crop-alt me-1"></i> Edit / Center Profile Picture
+                </button>
             </div>
         </div>
     </div>
@@ -653,6 +631,8 @@ include_once dirname(dirname(__DIR__)) . '/includes/header.php';
 
 </div>
 
+<!-- Hidden File Input for Avatar Selection -->
+<input type="file" id="avatarFileInput" accept="image/jpeg,image/png,image/webp" style="display: none;">
 
 <!-- ========================================== -->
 <!-- MODAL: INTERACTIVE PROFILE PICTURE CROPPER -->
@@ -662,19 +642,17 @@ include_once dirname(dirname(__DIR__)) . '/includes/header.php';
         <div class="modal-content border-0 shadow-lg" style="border-radius: 18px; overflow: hidden;">
             <div class="modal-header border-bottom bg-light">
                 <h5 class="modal-title fw-bold text-dark" id="cropAvatarModalLabel">
-                    <i class="fas fa-crop-alt text-primary me-2"></i>Edit & Center Profile Picture
+                    <i class="fas fa-crop-alt text-primary me-2"></i>Adjust & Center Profile Picture
                 </h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
             <div class="modal-body p-4">
                 
-                <!-- Step 1: File selection box -->
-                <div class="mb-3 text-center">
-                    <label class="btn btn-outline-primary px-4 py-2 rounded-pill shadow-sm" for="avatarFileInput">
-                        <i class="fas fa-folder-open me-2"></i> Choose Photo / Upload Image
-                    </label>
-                    <input type="file" id="avatarFileInput" accept="image/jpeg,image/png,image/webp" style="display: none;">
-                    <div class="small text-muted mt-2">Supports JPG, PNG, or WEBP (Max 3 MB)</div>
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <span class="small text-muted"><i class="fas fa-info-circle me-1 text-primary"></i> Drag image to center &bull; Scroll to zoom</span>
+                    <button type="button" class="btn btn-outline-secondary btn-sm" onclick="triggerAvatarFileInput()">
+                        <i class="fas fa-folder-open me-1"></i> Choose Another Image
+                    </button>
                 </div>
 
                 <div class="row g-4 align-items-center">
@@ -683,9 +661,6 @@ include_once dirname(dirname(__DIR__)) . '/includes/header.php';
                         <div style="width: 100%; height: 350px; background: #0f172a; border-radius: 12px; overflow: hidden; display: flex; align-items: center; justify-content: center; position: relative;">
                             <img id="cropperImageSource" src="<?php echo !empty($user['avatar']) ? BASE_URL . htmlspecialchars($user['avatar']) : BASE_URL . 'assets/images/default-avatar.png'; ?>" alt="Crop Source" style="max-width: 100%; display: block;">
                         </div>
-                        <small class="text-muted d-block text-center mt-2">
-                            <i class="fas fa-hand-paper me-1"></i> Drag to move/center &bull; Scroll to zoom
-                        </small>
                     </div>
 
                     <!-- Live Circle Preview & Quick Controls -->
@@ -839,14 +814,10 @@ const avatarFileInput = document.getElementById('avatarFileInput');
 const btnSaveCroppedAvatar = document.getElementById('btnSaveCroppedAvatar');
 const cropAlertFeedback = document.getElementById('cropAlertFeedback');
 
-function openAvatarCropModal() {
-    cropAlertFeedback.style.display = 'none';
-    cropModal.show();
-
-    cropModalEl.addEventListener('shown.bs.modal', function initCropperOnShown() {
-        cropModalEl.removeEventListener('shown.bs.modal', initCropperOnShown);
-        initCropper();
-    });
+// Trigger the native file input directly
+function triggerAvatarFileInput() {
+    avatarFileInput.value = '';
+    avatarFileInput.click();
 }
 
 function initCropper() {
@@ -869,7 +840,7 @@ function initCropper() {
     });
 }
 
-// Handle file upload selection
+// When a file is chosen, load it into Cropper and immediately show modal
 avatarFileInput.addEventListener('change', function() {
     const file = this.files?.[0];
     if (!file) return;
@@ -888,11 +859,17 @@ avatarFileInput.addEventListener('change', function() {
 
     const reader = new FileReader();
     reader.onload = function(e) {
-        if (cropperInstance) {
-            cropperInstance.destroy();
-        }
+        cropAlertFeedback.style.display = 'none';
         cropperImageSource.src = e.target.result;
-        initCropper();
+        
+        cropModal.show();
+        cropModalEl.addEventListener('shown.bs.modal', function initOnShown() {
+            cropModalEl.removeEventListener('shown.bs.modal', initOnShown);
+            initCropper();
+        });
+        if (cropperInstance) {
+            initCropper();
+        }
     };
     reader.readAsDataURL(file);
 });
@@ -960,14 +937,20 @@ btnSaveCroppedAvatar.addEventListener('click', function() {
             }
 
             // Also update navbar avatar if present
-            const navAvatar = document.querySelector('.navbar .rounded-circle');
+            const navAvatar = document.querySelector('.top-navbar .rounded-circle');
             if (navAvatar) {
                 navAvatar.src = data.avatar_url + '?t=' + new Date().getTime();
             }
 
+            // Also update sidebar avatar if present
+            const sideAvatar = document.querySelector('.sidebar-footer .rounded-circle');
+            if (sideAvatar) {
+                sideAvatar.src = data.avatar_url + '?t=' + new Date().getTime();
+            }
+
             setTimeout(() => {
                 cropModal.hide();
-            }, 1000);
+            }, 800);
         } else {
             cropAlertFeedback.className = 'alert alert-danger small mt-3';
             cropAlertFeedback.innerHTML = '<i class="fas fa-exclamation-triangle me-1"></i> ' + data.message;
