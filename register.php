@@ -131,8 +131,8 @@ $maskedSuperAdmin = (strlen($namePart) > 2) ? substr($namePart, 0, 1) . str_repe
             <div class="mb-3">
                 <label class="form-label small fw-semibold text-secondary">I am registering as: <span class="text-danger">*</span></label>
                 <select name="role" id="roleSelect" class="form-select fw-semibold" required onchange="toggleRoleVerification(this.value)">
-                    <option value="tenant" selected>Tenant (Renting an apartment/unit) — Instant Access</option>
-                    <option value="admin">Property Owner / Landlord — Requires Super Admin Approval</option>
+                    <option value="tenant" selected>Tenant (Renting an apartment/unit)</option>
+                    <option value="admin">Property Owner / Landlord </option>
                 </select>
             </div>
 
@@ -140,15 +140,15 @@ $maskedSuperAdmin = (strlen($namePart) > 2) ? substr($namePart, 0, 1) . str_repe
             <div id="superAdminSection" class="admin-verification-box" style="display: none;">
                 <div class="d-flex align-items-center gap-2 mb-2">
                     <i class="fas fa-shield-alt text-warning fs-5"></i>
-                    <strong class="text-dark small">Super Admin Security Authorization Required</strong>
+                    <strong class="text-dark small">Security Authorization Required</strong>
                 </div>
                 <p class="text-muted small mb-3" style="font-size: 0.82rem; line-height: 1.45;">
-                    To register as a Landlord, an approval code must be sent to the <strong>Super Administrator's Gmail (<?php echo htmlspecialchars($maskedSuperAdmin); ?>)</strong>.
+                    To register as a Landlord, an approval code must be sent to the <strong>Landlord's Gmail  (<?php echo htmlspecialchars($maskedSuperAdmin); ?>) </strong>.
                 </p>
 
                 <div class="d-flex gap-2 align-items-end mb-2">
                     <div class="flex-grow-1">
-                        <label class="form-label small fw-semibold text-dark mb-1">Super Admin Authorization Code <span class="text-danger">*</span></label>
+                        <label class="form-label small fw-semibold text-dark mb-1">Landlord Authorization Code <span class="text-danger">*</span></label>
                         <input type="text" name="admin_code" id="adminCodeInput" class="form-control font-monospace fw-bold text-center" placeholder="••••••" maxlength="6" pattern="[0-9]{6}">
                     </div>
                     <div>
@@ -158,14 +158,6 @@ $maskedSuperAdmin = (strlen($namePart) > 2) ? substr($namePart, 0, 1) . str_repe
                     </div>
                 </div>
                 <div id="codeRequestFeedback" class="small" style="display:none; font-size: 0.78rem;"></div>
-            </div>
-
-            <!-- Tenant Instant Access Badge -->
-            <div id="tenantSection" class="alert alert-success py-2 px-3 small border-0 d-flex align-items-center gap-2 mb-3">
-                <i class="fas fa-bolt text-success"></i>
-                <div class="small">
-                    <strong>Instant Account Creation:</strong> Tenants do not require an authorization code and can sign in immediately after registration.
-                </div>
             </div>
 
             <!-- Full Name -->
@@ -183,7 +175,7 @@ $maskedSuperAdmin = (strlen($namePart) > 2) ? substr($namePart, 0, 1) . str_repe
                     <label class="form-label small fw-semibold text-secondary">Username <span class="text-danger">*</span></label>
                     <div class="input-group">
                         <span class="input-group-text bg-light border-end-0 text-muted"><i class="fas fa-user"></i></span>
-                        <input type="text" name="username" class="form-control border-start-0 ps-0" placeholder="e.g. maria.santos" required>
+                        <input type="text" name="username" class="form-control border-start-0 ps-0" placeholder="e.g. JeckDetera" required>
                     </div>
                 </div>
                 <!-- Phone -->
