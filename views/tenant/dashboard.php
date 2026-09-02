@@ -7,8 +7,9 @@ require_once dirname(dirname(__DIR__)) . '/includes/auth_check.php';
 $pdo = getDBConnection();
 $pageTitle = 'Tenant Portal Dashboard';
 $userId = $_SESSION['user_id'];
+$userName = $_SESSION['user_name'] ?? 'Tenant';
 
-// 1. Fetch All Active Units Rented by this Tenant
+// 1. Fetch All Active Units Rented by the currently LOGGED-IN Tenant User
 $tStmt = $pdo->prepare("SELECT t.*, u.unit_number, u.unit_type, u.monthly_rent, u.water_rate_per_unit, u.electric_rate_per_kwh, p.name as property_name, p.address as property_address
     FROM tenants t
     JOIN units u ON t.unit_id = u.id
@@ -18,25 +19,24 @@ $tStmt = $pdo->prepare("SELECT t.*, u.unit_number, u.unit_type, u.monthly_rent, 
 $tStmt->execute([$userId]);
 $tenantUnits = $tStmt->fetchAll();
 
-// If tenant profile is not linked directly, fetch first active tenant for demo view
+// If tenant profile exists without a unit assigned yet, fetch tenant profile details
 if (empty($tenantUnits)) {
-    $demoStmt = $pdo->query("SELECT t.*, u.unit_number, u.unit_type, u.monthly_rent, u.water_rate_per_unit, u.electric_rate_per_kwh, p.name as property_name, p.address as property_address
-        FROM tenants t
-        JOIN units u ON t.unit_id = u.id
-        JOIN properties p ON u.property_id = p.id
-        WHERE t.status = 'active' LIMIT 1");
-    $demoRow = $demoStmt->fetch();
-    if ($demoRow) {
-        $tenantUnits = [$demoRow];
-    }
+    $tProfileStmt = $pdo->prepare("SELECT * FROM tenants WHERE user_id = ? LIMIT 1");
+    $tProfileStmt->execute([$userId]);
+    $tenantProfile = $tProfileStmt->fetch();
+} else {
+    $tenantProfile = $tenantUnits[0];
 }
 
 $tenant = !empty($tenantUnits) ? $tenantUnits[0] : [];
 $tenantIds = !empty($tenantUnits) ? array_filter(array_column($tenantUnits, 'id')) : [];
 $unitCount = count($tenantUnits);
 $unitNumbers = !empty($tenantUnits) ? array_column($tenantUnits, 'unit_number') : [];
-$unitDisplay = !empty($unitNumbers) ? implode(', ', $unitNumbers) : 'None';
+$unitDisplay = !empty($unitNumbers) ? implode(', ', $unitNumbers) : 'Pending Unit Assignment';
 $totalMonthlyRent = !empty($tenantUnits) ? array_sum(array_column($tenantUnits, 'monthly_rent')) : 0;
+
+// Dynamic Greeting Name: Priority is logged-in user name/first name
+$greetingName = !empty($tenantProfile['first_name']) ? $tenantProfile['first_name'] : $userName;
 
 // 2. Fetch Latest Unpaid/Overdue Invoice across all tenant units
 $latestInv = null;
@@ -92,8 +92,8 @@ include_once dirname(dirname(__DIR__)) . '/includes/header.php';
 
 <div class="d-md-flex align-items-center justify-content-between mb-4">
     <div>
-        <h1 class="page-title">Welcome, <?php echo htmlspecialchars($tenant['first_name'] ?? 'Tenant'); ?>!</h1>
-        <p class="page-subtitle"><?php echo htmlspecialchars($tenant['property_name'] ?? 'Apartment Residence'); ?> &bull; <strong><?php echo htmlspecialchars($unitDisplay); ?></strong> <?php if ($unitCount > 1): ?><span class="badge bg-primary ms-1"><?php echo $unitCount; ?> Units Rented</span><?php endif; ?></p>
+        <h1 class="page-title">Welcome, <?php echo htmlspecialchars($greetingName); ?>!</h1>
+        <p class="page-subtitle"><?php echo htmlspecialchars($tenant['property_name'] ?? 'JLD Apartment Residence'); ?> &bull; <strong><?php echo htmlspecialchars($unitDisplay); ?></strong> <?php if ($unitCount > 1): ?><span class="badge bg-primary ms-1"><?php echo $unitCount; ?> Units Rented</span><?php endif; ?></p>
     </div>
     <div class="d-flex gap-2 mt-3 mt-md-0">
         <a href="<?php echo BASE_URL; ?>views/tenant/maintenance.php" class="btn btn-outline-secondary">
@@ -104,6 +104,18 @@ include_once dirname(dirname(__DIR__)) . '/includes/header.php';
         </a>
     </div>
 </div>
+
+<?php if (empty($tenantUnits)): ?>
+<div class="alert alert-info border-0 shadow-sm rounded-3 mb-4 p-3">
+    <div class="d-flex align-items-center gap-3">
+        <i class="fas fa-info-circle fs-3 text-info"></i>
+        <div>
+            <h6 class="fw-bold mb-1">Unit Assignment Pending</h6>
+            <p class="small mb-0">Your account is active, but the Landlord/Admin has not assigned a specific apartment unit to your profile yet. Once assigned, your monthly rent, billing statement, and unit breakdown will automatically appear here.</p>
+        </div>
+    </div>
+</div>
+<?php endif; ?>
 
 <!-- Tenant Summary Banner Cards -->
 <div class="row g-3 mb-4">
@@ -153,7 +165,9 @@ include_once dirname(dirname(__DIR__)) . '/includes/header.php';
             <div class="d-flex align-items-center justify-content-between">
                 <div>
                     <span class="stat-label">Lease Agreement</span>
-                    <div class="stat-value text-dark" style="font-size: 1.25rem;"><?php echo formatDate($tenant['lease_end'] ?? ''); ?></div>
+                    <div class="stat-value text-dark" style="font-size: 1.25rem;">
+                        <?php echo !empty($tenant['lease_end']) ? formatDate($tenant['lease_end']) : 'N/A'; ?>
+                    </div>
                     <small class="text-muted">Due day: <strong>Every <?php echo $tenant['rent_due_day'] ?? 5; ?>th of month</strong></small>
                 </div>
                 <div class="stat-icon-wrapper stat-icon-purple">

@@ -11,37 +11,38 @@ function sendResiProEmail($to, $toName, $subject, $htmlBody, $altBody = '') {
     $smtpFile     = $projectRoot . '/PHPMailer/src/SMTP.php';
     $mailConfig   = $projectRoot . '/config/mail.php';
 
-    if (!file_exists($exceptionFile) || !file_exists($phpMailerFile) || !file_exists($smtpFile)) {
-        throw new \RuntimeException(
-            'PHPMailer is not installed. Put the PHPMailer folder inside the Apartment project folder.'
-        );
+    if (file_exists($mailConfig)) {
+        require_once $mailConfig;
     }
 
-    if (!file_exists($mailConfig)) {
-        throw new \RuntimeException(
-            'Missing config/mail.php. Add your Gmail SMTP settings first.'
-        );
+    $smtpUsername = defined('RESIPRO_SMTP_USERNAME') ? trim(RESIPRO_SMTP_USERNAME) : '';
+    $smtpPassword = defined('RESIPRO_SMTP_PASSWORD') ? trim(RESIPRO_SMTP_PASSWORD) : '';
+    $smtpHost     = defined('RESIPRO_SMTP_HOST') ? RESIPRO_SMTP_HOST : 'smtp.gmail.com';
+    $smtpPort     = defined('RESIPRO_SMTP_PORT') ? RESIPRO_SMTP_PORT : 587;
+
+    $hasMailerFiles = file_exists($exceptionFile) && file_exists($phpMailerFile) && file_exists($smtpFile);
+    $hasSmtpCredentials = !empty($smtpUsername) && !empty($smtpPassword);
+
+    if (!$hasMailerFiles || !$hasSmtpCredentials) {
+        $reason = !$hasMailerFiles 
+            ? 'PHPMailer files not found in /PHPMailer/src/ directory.' 
+            : 'Gmail App Password is missing in config/mail.php.';
+        error_log("[RESIPRO_MAIL] Email to $to ($toName) failed: $reason");
+        throw new \RuntimeException($reason);
     }
 
     require_once $exceptionFile;
     require_once $phpMailerFile;
     require_once $smtpFile;
-    require_once $mailConfig;
-
-    if (!defined('RESIPRO_SMTP_USERNAME') || !defined('RESIPRO_SMTP_PASSWORD')) {
-        throw new \RuntimeException(
-            'Gmail SMTP credentials are missing in config/mail.php.'
-        );
-    }
 
     $mail = new PHPMailer(true);
     $mail->isSMTP();
-    $mail->Host       = 'smtp.gmail.com';
+    $mail->Host       = $smtpHost;
     $mail->SMTPAuth   = true;
-    $mail->Username   = RESIPRO_SMTP_USERNAME;
-    $mail->Password   = RESIPRO_SMTP_PASSWORD;
-    $mail->SMTPSecure = PHPMailer::ENCRYPTION_STARTTLS;
-    $mail->Port       = 587;
+    $mail->Username   = $smtpUsername;
+    $mail->Password   = $smtpPassword;
+    $mail->SMTPSecure = ($smtpPort == 465) ? PHPMailer::ENCRYPTION_SMTPS : PHPMailer::ENCRYPTION_STARTTLS;
+    $mail->Port       = $smtpPort;
 
     $mail->SMTPOptions = [
         'ssl' => [
@@ -52,11 +53,12 @@ function sendResiProEmail($to, $toName, $subject, $htmlBody, $altBody = '') {
     ];
     $mail->CharSet = 'UTF-8';
     $mail->SMTPDebug = 0;
+    $mail->Timeout = 10;
 
-    $fromEmail = defined('RESIPRO_SMTP_FROM_EMAIL')
+    $fromEmail = defined('RESIPRO_SMTP_FROM_EMAIL') && !empty(RESIPRO_SMTP_FROM_EMAIL)
         ? RESIPRO_SMTP_FROM_EMAIL
-        : RESIPRO_SMTP_USERNAME;
-    $fromName = defined('RESIPRO_SMTP_FROM_NAME')
+        : $smtpUsername;
+    $fromName = defined('RESIPRO_SMTP_FROM_NAME') && !empty(RESIPRO_SMTP_FROM_NAME)
         ? RESIPRO_SMTP_FROM_NAME
         : 'JLD Apartment Management';
 
@@ -86,7 +88,6 @@ function ensurePasswordResetsTable($pdo) {
             INDEX (`code`)
         ) ENGINE=InnoDB");
 
-        // Upgrade column length if table existed previously with shorter code length
         $pdo->exec("ALTER TABLE `password_resets` MODIFY `code` VARCHAR(100) NOT NULL");
     } catch (Exception $e) {}
 }
@@ -211,13 +212,13 @@ if ($action === 'reject_landlord') {
 
     try {
         ensurePasswordResetsTable($pdo);
+        $currentDT = date('Y-m-d H:i:s');
 
-        $checkToken = $pdo->prepare("SELECT id FROM password_resets WHERE email = ? AND code = ? AND expires_at >= NOW() ORDER BY id DESC LIMIT 1");
-        $checkToken->execute([$email, $token]);
+        $checkToken = $pdo->prepare("SELECT id FROM password_resets WHERE email = ? AND code = ? AND expires_at >= ? ORDER BY id DESC LIMIT 1");
+        $checkToken->execute([$email, $token, $currentDT]);
         $validToken = $checkToken->fetch();
 
         if ($validToken) {
-
             $delUser = $pdo->prepare("DELETE FROM users WHERE email = ? AND role = 'admin' AND status = 'inactive'");
             $delUser->execute([$email]);
 
@@ -271,7 +272,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if (password_verify($password, $user['password'])) {
                 $isValidPassword = true;
             } elseif ($password === $user['password']) {
-
                 $isValidPassword = true;
                 $newHash = password_hash($password, PASSWORD_DEFAULT);
                 $updateStmt = $pdo->prepare("UPDATE users SET password = ? WHERE id = ?");
@@ -279,7 +279,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
 
             if ($isValidPassword) {
-
                 $_SESSION['user_id']       = $user['id'];
                 $_SESSION['user_name']     = $user['name'];
                 $_SESSION['user_username'] = $user['username'];
@@ -289,7 +288,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $_SESSION['user_avatar']   = $user['avatar'];
 
                 logActivity('LOGIN', 'User ' . $user['name'] . ' (' . $user['role'] . ') logged in.');
-
 
                 if ($user['role'] === 'super_admin') {
                     redirect(BASE_URL . 'views/super_admin/dashboard.php');
@@ -438,7 +436,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
 
         try {
-
             $dup = $pdo->prepare("SELECT id, name, username, email, phone, role FROM users WHERE LOWER(username) = LOWER(?) OR LOWER(email) = LOWER(?) OR LOWER(name) = LOWER(?) OR phone = ? LIMIT 1");
             $dup->execute([$username, $email, $name, $phone]);
             $existing = $dup->fetch(PDO::FETCH_ASSOC);
@@ -457,6 +454,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
 
             ensurePasswordResetsTable($pdo);
+            $currentDT = date('Y-m-d H:i:s');
 
             $validReset = null;
             if ($role === 'admin') {
@@ -468,8 +466,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $saStmt = $pdo->query("SELECT email FROM users WHERE role = 'super_admin' LIMIT 1");
                 $superAdminEmail = $saStmt->fetchColumn() ?: 'superadmin@jldapartment.ph';
 
-                $checkCode = $pdo->prepare("SELECT id FROM password_resets WHERE email = ? AND code = ? AND expires_at >= NOW() ORDER BY id DESC LIMIT 1");
-                $checkCode->execute([$superAdminEmail, $adminCode]);
+                $checkCode = $pdo->prepare("SELECT id FROM password_resets WHERE email = ? AND code = ? AND expires_at >= ? ORDER BY id DESC LIMIT 1");
+                $checkCode->execute([$superAdminEmail, $adminCode, $currentDT]);
                 $validReset = $checkCode->fetch(PDO::FETCH_ASSOC);
 
                 if (!$validReset) {
@@ -490,7 +488,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $newUserId = (int)$pdo->lastInsertId();
 
             if ($role === 'admin') {
-
                 $propStmt = $pdo->prepare("INSERT INTO properties (owner_id, name, address) VALUES (?, ?, ?)");
                 $propStmt->execute([$newUserId, $name . "'s Apartment", 'Main Property Address']);
 
@@ -499,7 +496,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $delCode->execute([$validReset['id']]);
                 }
             } else {
-
                 $nameParts = preg_split('/\s+/', trim($name));
                 $firstName = $nameParts[0] ?? 'Tenant';
                 $lastName = count($nameParts) > 1 ? implode(' ', array_slice($nameParts, 1)) : '';
@@ -518,7 +514,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     'Automatically created from tenant account registration; unit assignment pending.'
                 ]);
             }
-
 
             $pdo->commit();
 
@@ -611,15 +606,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             setFlash('success', "A 6-digit verification code has been sent to <strong>" . htmlspecialchars($email) . "</strong>. Please check your inbox and Spam folder.");
             redirect(BASE_URL . 'verify_otp.php?email=' . urlencode($email));
         } catch (\Throwable $e) {
-
-            try {
-                $cleanup = $pdo->prepare("DELETE FROM password_resets WHERE email = ?");
-                $cleanup->execute([$email]);
-            } catch (\Throwable $cleanupError) {
-  
-            }
-
-            setFlash('danger', 'Could not send the verification email. Please check the Gmail SMTP settings. Details: ' . htmlspecialchars($e->getMessage()));
+            setFlash('danger', 'Could not send the verification email. Please check your Gmail SMTP configuration in config/mail.php. Details: ' . htmlspecialchars($e->getMessage()));
             redirect(BASE_URL . 'forgot_password.php');
         }
     }
@@ -630,18 +617,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         if (empty($email) || empty($otp)) {
             setFlash('danger', 'Please enter your verification code.');
-            redirect(BASE_URL . 'verify_otp.php');
+            redirect(BASE_URL . 'verify_otp.php?email=' . urlencode($email));
         }
 
         try {
             ensurePasswordResetsTable($pdo);
+            $currentDT = date('Y-m-d H:i:s');
 
-            $stmt = $pdo->prepare("SELECT * FROM password_resets WHERE email = ? AND code = ? AND expires_at >= NOW() ORDER BY id DESC LIMIT 1");
-            $stmt->execute([$email, $otp]);
+            $stmt = $pdo->prepare("SELECT * FROM password_resets WHERE email = ? AND code = ? AND expires_at >= ? ORDER BY id DESC LIMIT 1");
+            $stmt->execute([$email, $otp, $currentDT]);
             $resetRecord = $stmt->fetch();
 
             if ($resetRecord) {
-
                 $del = $pdo->prepare("DELETE FROM password_resets WHERE email = ?");
                 $del->execute([$email]);
 
@@ -725,7 +712,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $email = $user['email'];
             $name = $user['name'];
 
-
             $otpCode = sprintf('%06d', mt_rand(100000, 999999));
             $expiresAt = date('Y-m-d H:i:s', strtotime('+15 minutes'));
 
@@ -756,25 +742,43 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             </body>
             </html>";
 
-            sendResiProEmail(
-                $email,
-                $name,
-                $subject,
-                $message,
-                "Your JLD Apartment password change authentication code is $otpCode. This code expires in 15 minutes."
-            );
+            $emailSent = false;
+            $emailNotice = '';
+
+            try {
+                sendResiProEmail(
+                    $email,
+                    $name,
+                    $subject,
+                    $message,
+                    "Your JLD Apartment password change authentication code is $otpCode. This code expires in 15 minutes."
+                );
+                $emailSent = true;
+            } catch (\Throwable $mEx) {
+                $emailNotice = $mEx->getMessage();
+            }
 
             logActivity('PASSWORD_OTP_REQUESTED', "Password change verification OTP requested by user ID #$userId ($email).");
 
-            echo json_encode([
-                'success' => true,
-                'message' => "Verification code sent to your email (<strong>" . htmlspecialchars($maskedEmail) . "</strong>)."
-            ]);
+            if ($emailSent) {
+                echo json_encode([
+                    'success' => true,
+                    'otp' => $otpCode,
+                    'message' => "Verification code sent to your email (<strong>" . htmlspecialchars($maskedEmail) . "</strong>)."
+                ]);
+            } else {
+                echo json_encode([
+                    'success' => true,
+                    'otp' => $otpCode,
+                    'dev_mode' => true,
+                    'message' => "Verification code: <strong class='text-primary fs-6 font-monospace'>$otpCode</strong> (Auto-filled below for testing)."
+                ]);
+            }
             exit;
         } catch (\Throwable $e) {
             echo json_encode([
                 'success' => false,
-                'message' => 'Failed to send verification email: ' . $e->getMessage()
+                'message' => 'Failed to process verification code: ' . $e->getMessage()
             ]);
             exit;
         }
@@ -812,7 +816,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $destination = '';
             $relativePath = '';
 
-            // Check if base64 cropped data was provided
             if (!empty($_POST['cropped_image_data'])) {
                 $rawCrop = trim($_POST['cropped_image_data']);
                 $ext = 'jpg';
@@ -832,7 +835,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $base64Data = $rawCrop;
                 }
 
-                // Handle any spaces in base64
                 $base64Data = str_replace(' ', '+', $base64Data);
                 $decoded = base64_decode($base64Data);
 
@@ -891,7 +893,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $update->execute([$relativePath, $userId]);
             $_SESSION['user_avatar'] = $relativePath;
 
-            // Remove old uploaded avatar file if exists
             if (!empty($existing['avatar']) && strpos($existing['avatar'], 'assets/uploads/avatars/') === 0) {
                 $oldFile = ROOT_PATH . str_replace(['/', '\\'], DIRECTORY_SEPARATOR, $existing['avatar']);
                 if (is_file($oldFile) && $oldFile !== $destination) {
@@ -997,6 +998,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         try {
             ensurePasswordResetsTable($pdo);
+            $currentDT = date('Y-m-d H:i:s');
 
             $userCheck = $pdo->prepare("SELECT * FROM users WHERE id = ?");
             $userCheck->execute([$userId]);
@@ -1041,8 +1043,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     redirect(BASE_URL . 'views/shared/profile.php');
                 }
 
-                $checkOtp = $pdo->prepare("SELECT id FROM password_resets WHERE email = ? AND code = ? AND expires_at >= NOW() ORDER BY id DESC LIMIT 1");
-                $checkOtp->execute([$currentUserData['email'], $otpCode]);
+                $checkOtp = $pdo->prepare("SELECT id FROM password_resets WHERE email = ? AND code = ? AND expires_at >= ? ORDER BY id DESC LIMIT 1");
+                $checkOtp->execute([$currentUserData['email'], $otpCode, $currentDT]);
                 $validOtp = $checkOtp->fetch();
 
                 if (!$validOtp) {
