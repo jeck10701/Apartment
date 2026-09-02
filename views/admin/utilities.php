@@ -218,10 +218,12 @@ function calculateUtilityTotals() {
     const currElec = parseFloat(document.getElementById('curr_electric_reading')?.value) || 0;
     const elecRate = parseFloat(document.getElementById('electric_rate')?.value) || 0;
 
-    const waterConsumption = Math.max(0, currWater - prevWater);
-    const elecConsumption = Math.max(0, currElec - prevElec);
-    const waterAmount = waterConsumption * waterRate;
-    const elecAmount = elecConsumption * elecRate;
+    // Flexible Logic: Kung mas mababa ang current sa prev, ginagamit nang direkta ang current reading
+    const waterConsumption = (currWater >= prevWater) ? (currWater - prevWater) : currWater;
+    const elecConsumption = (currElec >= prevElec) ? (currElec - prevElec) : currElec;
+
+    const waterAmount = Math.max(0, waterConsumption * waterRate);
+    const elecAmount = Math.max(0, elecConsumption * elecRate);
 
     document.getElementById('water_consumption_badge').textContent = waterConsumption.toFixed(2) + ' cu.m';
     document.getElementById('elec_consumption_badge').textContent = elecConsumption.toFixed(2) + ' kWh';
@@ -229,10 +231,9 @@ function calculateUtilityTotals() {
     document.getElementById('electric_total_cost').textContent = money(elecAmount);
     document.getElementById('utility_grand_total').textContent = money(waterAmount + elecAmount);
 
-    const waterInvalid = currWater < prevWater;
-    const elecInvalid = currElec < prevElec;
-    document.getElementById('curr_water_reading').classList.toggle('is-invalid', waterInvalid);
-    document.getElementById('curr_electric_reading').classList.toggle('is-invalid', elecInvalid);
+    // Inalis na ang red-border error toggle para hindi ma-block ang input
+    document.getElementById('curr_water_reading')?.classList.remove('is-invalid');
+    document.getElementById('curr_electric_reading')?.classList.remove('is-invalid');
 }
 
 function setPreviousReadings(data) {
@@ -289,9 +290,6 @@ function loadPreviousReadings() {
     document.getElementById('hidden_tenant_id').value = tenantId || '';
     document.getElementById('hidden_unit_id').value = unitId || '';
 
-    // Immediately show the rates saved for the selected unit.
-    // The tenant/unit dropdown already contains the unit's current rates,
-    // so the values appear as soon as the tenant + unit is selected.
     const baseUrl = '<?php echo BASE_URL; ?>controllers/UtilityController.php';
     const selectedWaterRate = Number(selected.dataset.waterRate || 0);
     const selectedElectricRate = Number(selected.dataset.electricRate || 0);
@@ -318,9 +316,7 @@ function loadPreviousReadings() {
     document.getElementById('electric_previous_hint').textContent = 'Loading previous reading...';
     calculateUtilityTotals();
 
-    calculateUtilityTotals();
-
-    // Load the previous month's CURRENT readings for this tenant/unit.
+    // Fetch previous reading from database
     fetch(baseUrl + '?action=get_previous_reading&tenant_id=' + encodeURIComponent(tenantId) + '&unit_id=' + encodeURIComponent(unitId) + '&billing_month=' + encodeURIComponent(month), {
         headers: {'X-Requested-With': 'XMLHttpRequest'}
     })
@@ -357,4 +353,4 @@ document.addEventListener('DOMContentLoaded', function() {
 });
 </script>
 
-<?php include_once dirname(dirname(__DIR__)) . '/includes/footer.php'; ?>
+<?php include_once dirname(dirname(__DIR__)) . '/includes/header.php'; ?>

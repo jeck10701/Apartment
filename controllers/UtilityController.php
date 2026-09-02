@@ -110,16 +110,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         $autoGenerateInvoice = isset($_POST['auto_generate_invoice']) ? true : false;
 
-        if ($currWater < $prevWater || $currElec < $prevElec) {
-            setFlash('danger', 'Current reading cannot be lower than previous reading.');
-            redirect(BASE_URL . 'views/admin/utilities.php');
-        }
+        // SMART CALCULATION: Kung mas mababa o pantay ang current sa prev, kukuha ng direct reading/consumption
+        $waterConsumption = ($currWater >= $prevWater) ? ($currWater - $prevWater) : $currWater;
+        $waterAmount      = max(0, $waterConsumption * $waterRate);
 
-        $waterConsumption = max(0, $currWater - $prevWater);
-        $waterAmount      = $waterConsumption * $waterRate;
-
-        $elecConsumption  = max(0, $currElec - $prevElec);
-        $elecAmount       = $elecConsumption * $elecRate;
+        $elecConsumption  = ($currElec >= $prevElec) ? ($currElec - $prevElec) : $currElec;
+        $elecAmount       = max(0, $elecConsumption * $elecRate);
 
         try {
             $pdo->beginTransaction();

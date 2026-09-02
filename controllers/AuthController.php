@@ -250,13 +250,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
 
         try {
-            $stmt = $pdo->prepare("SELECT * FROM users WHERE username = ? OR email = ? LIMIT 1");
+            // BINARY keyword forces case-sensitive matching for usernames
+            $stmt = $pdo->prepare("SELECT * FROM users WHERE BINARY username = ? OR email = ? LIMIT 1");
             $stmt->execute([$usernameOrEmail, $usernameOrEmail]);
             $user = $stmt->fetch();
 
             if (!$user) {
                 setFlash('danger', 'Invalid username or password. Please verify your credentials.');
                 redirect(BASE_URL . 'login.php');
+            }
+
+            // Double protection: Ensure strictly exact case match if logged in via username
+            if (!filter_var($usernameOrEmail, FILTER_VALIDATE_EMAIL)) {
+                if ($user['username'] !== $usernameOrEmail) {
+                    setFlash('danger', 'Invalid username or password. Please check uppercase/lowercase letters.');
+                    redirect(BASE_URL . 'login.php');
+                }
             }
 
             if ($user['status'] === 'inactive' && $user['role'] === 'admin') {
